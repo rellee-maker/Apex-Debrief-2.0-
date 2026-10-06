@@ -1,0 +1,2079 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apex Debrief — Race Engineering Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script>
+if (window.tailwind) tailwind.config = {
+  darkMode: 'class',
+  theme: { extend: {
+    fontFamily: { sans: ['Inter','sans-serif'], mono: ['JetBrains Mono','monospace'], display: ['Chakra Petch','sans-serif'] },
+    colors: { racing: { darkBg:'#0b1018', panelBg:'#121a25', cardBg:'#182231', border:'#293648' } }
+  } }
+};
+</script>
+<style>
+  body { background:#0b1018; color:#e5e7eb; font-family:'Inter',sans-serif; overflow-x:hidden; }
+  .font-display { font-family:'Chakra Petch',sans-serif; }
+  .font-mono { font-family:'JetBrains Mono',monospace; }
+  ::-webkit-scrollbar { width:6px; height:6px; }
+  ::-webkit-scrollbar-track { background:#111827; }
+  ::-webkit-scrollbar-thumb { background:#374151; border-radius:3px; }
+  ::-webkit-scrollbar-thumb:hover { background:#3b82f6; }
+  .technical-grid { background-image:linear-gradient(rgba(71,85,105,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(71,85,105,.07) 1px,transparent 1px); background-size:24px 24px; }
+  .panel { background:#121a25; border:1px solid #293648; border-radius:.75rem; }
+  .card { background:#182231; border:1px solid #293648; border-radius:.5rem; }
+  .kicker { letter-spacing:.16em; }
+  .drop-active { border-color:#3b82f6 !important; background:rgba(59,130,246,.08) !important; }
+  .tab-btn.active { background:rgba(37,99,235,.2); color:#60a5fa; border-color:rgba(59,130,246,.4); }
+  th.sticky-col, td.sticky-col { position:sticky; left:0; background:#121a25; z-index:1; }
+  input[type=range] { accent-color:#3b82f6; }
+  select, input[type=number] { background:#0b1018; border:1px solid #293648; color:#e2e8f0; border-radius:.375rem; padding:.25rem .5rem; }
+  .chart-box { position:relative; }
+  .changed { background:rgba(245,158,11,.15); color:#fcd34d; }
+  #report { display:none; }
+  @media print {
+    @page { size: letter; margin: 0.45in; }
+    html, body { background:#fff !important; }
+    body > *:not(#report) { display:none !important; }
+    #report { display:block !important; }
+  }
+  #report { font-family: Inter, Arial, sans-serif; color:#0f172a; font-size:10.5px; line-height:1.4; }
+  #report h1 { font-size:20px; font-weight:800; margin:0; letter-spacing:.02em; }
+  #report h2 { font-size:11px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; color:#1e3a8a; border-bottom:1.5px solid #1e3a8a; padding-bottom:2px; margin:12px 0 6px; }
+  #report .rp-sub { color:#475569; font-size:10px; }
+  #report .rp-kpis { display:grid; grid-template-columns:repeat(6,1fr); gap:6px; margin-top:8px; }
+  #report .rp-kpi { border:1px solid #cbd5e1; border-radius:6px; padding:5px 7px; }
+  #report .rp-kpi b { display:block; font-size:15px; font-family:'JetBrains Mono',monospace; }
+  #report .rp-kpi span { font-size:8.5px; color:#64748b; letter-spacing:.08em; }
+  #report .rp-two { display:grid; grid-template-columns:1.15fr 1fr; gap:12px; align-items:start; }
+  #report table { width:100%; border-collapse:collapse; font-family:'JetBrains Mono',monospace; font-size:9.5px; }
+  #report th { text-align:left; color:#64748b; font-weight:600; border-bottom:1px solid #cbd5e1; padding:2px 4px; }
+  #report td { border-bottom:1px solid #eef2f7; padding:2px 4px; }
+  #report .best { color:#047857; font-weight:700; }
+  #report .muted { color:#94a3b8; }
+  #report .rp-card { border-left:3px solid #2563eb; padding:4px 8px; margin-bottom:6px; break-inside:avoid; }
+  #report .rp-card.red { border-color:#dc2626; } #report .rp-card.amber { border-color:#d97706; } #report .rp-card.emerald { border-color:#059669; }
+  #report .rp-card b { font-size:10.5px; }
+  #report .rp-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:4px 16px; }
+  #report .rp-foot { margin-top:10px; color:#94a3b8; font-size:8.5px; border-top:1px solid #e2e8f0; padding-top:4px; }
+  #report img { width:100%; border:1px solid #e2e8f0; border-radius:6px; }
+  #report .rp-section { break-inside:avoid; }
+</style>
+</head>
+<body class="min-h-screen flex flex-col antialiased technical-grid text-slate-200">
+
+<header class="border-b border-racing-border bg-racing-panelBg/95 backdrop-blur sticky top-0 z-50 px-4 py-3">
+  <div class="max-w-7xl mx-auto flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="h-10 w-10 shrink-0 rounded-lg bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400 text-xl"><i class="fa-solid fa-chart-diagram"></i></div>
+      <div class="min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <h1 class="font-display font-bold text-xl tracking-wider text-white">APEX DEBRIEF</h1>
+          <span class="text-[10px] px-2 py-0.5 rounded bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono kicker">RACE ENGINEERING</span>
+          <span id="session-badge" class="text-[10px] px-2 py-0.5 rounded bg-slate-700/40 border border-slate-600 text-slate-300 font-semibold">NO DATA LOADED</span>
+        </div>
+        <p class="text-xs text-slate-400 font-mono mt-0.5 truncate">
+          TRACK: <span id="hdr-track" class="text-amber-400 font-semibold">—</span> |
+          VEHICLE: <span id="hdr-vehicle" class="text-slate-200 font-semibold">—</span> |
+          DRIVER: <span id="hdr-driver" class="text-slate-200 font-semibold">—</span> |
+          DATE: <span id="hdr-date" class="text-slate-200 font-semibold">—</span>
+        </p>
+      </div>
+    </div>
+    <div class="flex flex-wrap items-center gap-2 text-xs">
+      <label for="csv-input" class="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white font-medium px-3.5 py-2 rounded-lg transition flex items-center gap-2"><i class="fa-solid fa-file-waveform"></i> Upload Telemetry <span class="opacity-60">.csv</span></label>
+      <input id="csv-input" type="file" accept=".csv,.txt,.xrk,.drk,.gpk,.rrk,.bak" multiple class="hidden">
+      <label for="track-input" class="cursor-pointer bg-purple-700 hover:bg-purple-600 text-white font-medium px-3.5 py-2 rounded-lg transition flex items-center gap-2"><i class="fa-solid fa-map-pin"></i> Track Splits <span class="opacity-60">.amss/.asd</span></label>
+      <input id="track-input" type="file" accept=".amss,.asd" class="hidden">
+ <button id="btn-pdf" class="bg-emerald-600/90 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg transition flex items-center gap-2 font-medium"><i class="fa-solid fa-file-pdf"></i> PDF Debrief</button>
+      <button id="btn-export" class="bg-racing-cardBg hover:bg-slate-700 text-slate-200 border border-racing-border px-3 py-2 rounded-lg transition flex items-center gap-2 font-mono"><i class="fa-solid fa-download text-blue-400"></i> Export Clean CSV</button>
+      <button id="btn-clear" class="bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/40 px-3 py-2 rounded-lg transition flex items-center gap-2 font-mono"><i class="fa-solid fa-trash-can"></i> Clear</button>
+    </div>
+  </div>
+</header>
+
+<main class="flex-1 max-w-7xl w-full mx-auto p-4 space-y-5">
+
+  <!-- Loading -->
+  <div id="loading" class="hidden panel p-4 text-sm font-mono text-blue-300 flex items-center gap-3"><i class="fa-solid fa-circle-notch fa-spin"></i> <span id="loading-text">Parsing telemetry…</span></div>
+
+  <!-- Empty state -->
+  <section id="empty-state" class="panel border-dashed border-2 p-10 text-center space-y-4 transition">
+    <div class="mx-auto h-14 w-14 rounded-full bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 text-2xl"><i class="fa-solid fa-flag-checkered"></i></div>
+    <h2 class="font-display text-2xl font-bold text-white">Drop a Race Studio CSV to start the debrief</h2>
+    <p class="text-sm text-slate-400 max-w-2xl mx-auto">Upload an AiM CSV export (one or several sessions) and, optionally, the track's <span class="font-mono text-purple-300">.amss</span> split file for sector timing. Everything is processed in your browser — nothing is uploaded anywhere.</p>
+    <div class="flex flex-wrap justify-center gap-2 text-xs font-mono">
+      <span class="card px-3 py-1.5 text-slate-300"><i class="fa-solid fa-file-csv text-emerald-400 mr-1"></i> Telemetry: AiM CSV (any channel set)</span>
+      <span class="card px-3 py-1.5 text-slate-300"><i class="fa-solid fa-map-pin text-purple-400 mr-1"></i> Splits: .amss (RS3) or .asd</span>
+      <span id="empty-track-status" class="card px-3 py-1.5 text-slate-500 hidden"></span>
+    </div>
+    <p class="text-[11px] text-slate-500 font-mono">Raw .drk / .xrk files can't be decoded in a browser — in Race Studio 3 right-click the session → Export → CSV.</p>
+  </section>
+
+  <section id="app" class="hidden space-y-5">
+    <!-- Session strip -->
+    <div class="panel p-3.5">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div class="min-w-0">
+          <div class="text-xs font-semibold text-slate-200 flex items-center gap-2 flex-wrap">
+            <span>File:</span><span id="strip-file" class="font-mono text-amber-300 break-all"></span>
+            <span id="strip-tag" class="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-500/30 px-1.5 py-0.5 rounded"></span>
+          </div>
+          <div id="strip-notes" class="text-[11px] text-slate-400 font-mono mt-0.5"></div>
+        </div>
+        <div id="strip-chips" class="flex flex-wrap items-center gap-2 text-xs font-mono"></div>
+      </div>
+      <div id="sessions-wrap" class="mt-3 hidden border-t border-racing-border pt-3">
+        <div class="text-[10px] uppercase tracking-wider font-mono text-slate-500 mb-2">Loaded sessions — click to switch</div>
+        <div id="sessions-list" class="flex flex-wrap gap-2"></div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <nav class="border-b border-racing-border flex items-center gap-2 overflow-x-auto pb-1" id="tabs">
+      <button data-tab="snapshot" class="tab-btn active bg-racing-panelBg border border-racing-border text-slate-300 px-4 py-2 rounded-lg font-display text-sm font-semibold flex items-center gap-2 shrink-0"><i class="fa-solid fa-stopwatch text-emerald-400"></i> Laps & Sectors</button>
+      <button data-tab="telemetry" class="tab-btn bg-racing-panelBg border border-racing-border text-slate-300 px-4 py-2 rounded-lg font-display text-sm font-semibold flex items-center gap-2 shrink-0"><i class="fa-solid fa-chart-line text-blue-400"></i> Lap Overlay & Delta</button>
+      <button data-tab="coaching" class="tab-btn bg-racing-panelBg border border-racing-border text-slate-300 px-4 py-2 rounded-lg font-display text-sm font-semibold flex items-center gap-2 shrink-0"><i class="fa-solid fa-route text-amber-400"></i> Coaching & Map</button>
+      <button data-tab="inputs" class="tab-btn bg-racing-panelBg border border-racing-border text-slate-300 px-4 py-2 rounded-lg font-display text-sm font-semibold flex items-center gap-2 shrink-0"><i class="fa-solid fa-gauge-high text-orange-400"></i> Driver Inputs</button>
+      <button data-tab="shift" class="tab-btn bg-racing-panelBg border border-racing-border text-slate-300 px-4 py-2 rounded-lg font-display text-sm font-semibold flex items-center gap-2 shrink-0"><i class="fa-solid fa-gears text-purple-400"></i> Shifting</button>
+      <button data-tab="setup" class="tab-btn bg-racing-panelBg border border-racing-border text-slate-300 px-4 py-2 rounded-lg font-display text-sm font-semibold flex items-center gap-2 shrink-0"><i class="fa-solid fa-sliders text-sky-400"></i> Setup, Notes & Weather</button>
+      <button data-tab="mechanic" class="tab-btn bg-racing-panelBg border border-racing-border text-slate-300 px-4 py-2 rounded-lg font-display text-sm font-semibold flex items-center gap-2 shrink-0"><i class="fa-solid fa-wrench text-purple-400"></i> Engine & ECU Health</button>
+      <button data-tab="audit" class="tab-btn bg-racing-panelBg border border-racing-border text-slate-300 px-4 py-2 rounded-lg font-display text-sm font-semibold flex items-center gap-2 shrink-0"><i class="fa-solid fa-list-check text-emerald-400"></i> Channel Audit (<span id="tab-ch-count">0</span>)</button>
+    </nav>
+
+    <!-- SNAPSHOT -->
+    <div id="tab-snapshot" class="tab-content space-y-5">
+      <div id="kpi-row" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"></div>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div class="lg:col-span-2 space-y-5">
+          <div class="panel p-4 space-y-3">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 class="font-display font-bold text-base text-white"><i class="fa-solid fa-list-ol text-emerald-400 mr-1"></i> LAP TIMING</h3>
+                <p class="text-xs text-slate-400">Click a lap to compare it against your best in the overlay. Purple = session-best sector.</p>
+              </div>
+              <div class="flex items-center gap-2 text-[10px] font-mono">
+                <span class="px-2 py-1 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">FLYING ≤105%</span>
+                <span class="px-2 py-1 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">SLOW / CAUTION</span>
+              </div>
+            </div>
+            <div class="overflow-x-auto"><table class="w-full text-left border-collapse text-xs font-mono whitespace-nowrap" id="lap-table"></table></div>
+          </div>
+          <div class="panel p-4 space-y-2">
+            <div class="flex items-center justify-between">
+              <h3 class="font-display text-sm font-semibold text-slate-200"><i class="fa-solid fa-chart-bar text-blue-400 mr-1"></i> Flying-lap pace</h3>
+              <span class="text-xs font-mono text-slate-400">Theoretical best: <span id="lbl-theo" class="text-purple-400">—</span></span>
+            </div>
+            <div class="chart-box h-56"><canvas id="chart-laps"></canvas></div>
+          </div>
+        </div>
+        <div class="space-y-5">
+          <div class="panel p-4 space-y-3">
+            <h3 class="font-display font-bold text-sm text-white"><i class="fa-solid fa-crosshairs text-purple-400 mr-1"></i> SECTOR OPPORTUNITY</h3>
+            <p class="text-[11px] text-slate-400">Average flying-lap time lost in each sector vs your best version of it.</p>
+            <div id="sector-loss-wrap" class="chart-box h-64"><canvas id="chart-sector-loss"></canvas></div>
+            <div id="sector-empty" class="hidden card p-3 text-xs text-slate-400 font-mono text-center">Load the track's .amss split file to unlock sector timing.</div>
+            <div class="p-3 rounded-lg bg-purple-950/30 border border-purple-500/30 text-xs text-purple-300 font-mono flex items-center justify-between">
+              <span><i class="fa-solid fa-wand-magic-sparkles"></i> Theoretical best</span>
+              <span id="sum-theo" class="font-bold text-purple-300 text-sm">—</span>
+            </div>
+          </div>
+          <div class="panel p-4 space-y-3">
+            <h3 class="font-display font-bold text-sm text-white"><i class="fa-solid fa-user-check text-blue-400 mr-1"></i> SESSION HIGHLIGHTS</h3>
+            <div id="highlights" class="space-y-2 text-xs font-mono"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TELEMETRY -->
+    <div id="tab-telemetry" class="tab-content hidden space-y-4">
+      <div class="panel p-4 space-y-3">
+        <div class="flex flex-wrap items-center gap-2 text-xs font-mono">
+          <span class="text-slate-400"><i class="fa-solid fa-code-compare text-blue-400"></i> Reference</span>
+          <select id="sel-ref"></select>
+          <button id="btn-swap" class="card px-2 py-1 hover:bg-slate-700" title="Swap"><i class="fa-solid fa-right-left"></i></button>
+          <span class="text-slate-400">Compare</span>
+          <select id="sel-cmp"></select>
+          <span id="lbl-lapdelta" class="ml-2"></span>
+          <span class="ml-auto text-slate-500">X-axis: lap distance (laps aligned by distance, not time)</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span id="pos-readout" class="text-xs font-mono text-blue-300 w-64 shrink-0">—</span>
+          <input id="scrubber" type="range" min="0" max="1000" value="0" class="w-full h-2 cursor-pointer">
+        </div>
+        <div id="gauges" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2"></div>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="lg:col-span-2 panel p-4 space-y-1">
+          <div class="text-[11px] font-mono text-slate-400">SPEED (mph)</div><div class="chart-box h-48"><canvas id="ch-speed"></canvas></div>
+          <div class="text-[11px] font-mono text-slate-400 pt-2">DELTA TIME (s) — above zero = compare lap is behind</div><div class="chart-box h-28"><canvas id="ch-delta"></canvas></div>
+          <div class="text-[11px] font-mono text-slate-400 pt-2">THROTTLE % (amber) / BRAKE % of peak (red)</div><div class="chart-box h-36"><canvas id="ch-pedals"></canvas></div>
+          <div class="text-[11px] font-mono text-slate-400 pt-2">RPM / GEAR</div><div class="chart-box h-32"><canvas id="ch-rpm"></canvas></div>
+          <div class="text-[11px] font-mono text-slate-400 pt-2">STEERING (°) / LATERAL G</div><div class="chart-box h-32"><canvas id="ch-steer"></canvas></div>
+        </div>
+        <div class="space-y-4">
+          <div class="panel p-3">
+            <div class="flex items-center justify-between mb-2"><h3 class="font-display font-bold text-sm text-white"><i class="fa-solid fa-map text-emerald-400 mr-1"></i> TRACK</h3><span id="map-legend" class="text-[10px] font-mono text-slate-400"></span></div>
+            <div class="relative bg-slate-950 rounded-lg overflow-hidden" style="height:300px"><canvas id="map-telemetry" style="width:100%;height:100%"></canvas></div>
+          </div>
+          <div class="panel p-3">
+            <h3 class="font-display font-bold text-sm text-white mb-2"><i class="fa-solid fa-table text-purple-400 mr-1"></i> SECTOR DELTAS</h3>
+            <div id="sector-compare" class="text-xs font-mono max-h-80 overflow-y-auto"></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel p-4 space-y-2">
+        <div class="flex flex-wrap items-center gap-2 text-xs font-mono">
+          <h3 class="font-display font-bold text-sm text-white mr-2"><i class="fa-solid fa-magnifying-glass-chart text-teal-400 mr-1"></i> CHANNEL EXPLORER</h3>
+          <select id="sel-explore"></select>
+          <select id="sel-explore-mode"><option value="lap">Ref vs compare lap</option><option value="session">Whole session (time)</option></select>
+          <span id="explore-note" class="text-slate-500"></span>
+        </div>
+        <div class="chart-box h-56"><canvas id="ch-explore"></canvas></div>
+      </div>
+    </div>
+
+    <!-- COACHING -->
+    <div id="tab-coaching" class="tab-content hidden space-y-5">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 class="font-display font-bold text-2xl text-white">Data-Driven Coaching</h2>
+          <p class="text-xs text-slate-400 font-mono mt-1">Every number below is computed from the uploaded laps — your fastest version of each sector vs your typical one.</p>
+        </div>
+        <span id="coach-badge" class="px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-xs text-slate-300 font-mono"></span>
+      </div>
+      <div class="panel p-4">
+        <div class="flex items-center justify-between mb-2"><h3 class="font-display font-bold text-sm text-white"><i class="fa-solid fa-map text-emerald-400 mr-1"></i> BEST LAP — SPEED TRACE & SPLIT GATES</h3><span class="text-[10px] font-mono text-slate-400"><span style="color:#ef4444">■</span> slow · <span style="color:#f59e0b">■</span> mid · <span style="color:#10b981">■</span> fast · <span style="color:#c084fc">●</span> gate</span></div>
+        <div class="relative bg-slate-950 rounded-lg overflow-hidden" style="height:380px"><canvas id="map-coach" style="width:100%;height:100%"></canvas></div>
+      </div>
+      <div id="coach-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-5"></div>
+    </div>
+
+    <!-- INPUTS -->
+    <div id="tab-inputs" class="tab-content hidden space-y-4">
+      <div>
+        <h2 class="font-display font-bold text-2xl text-white">Driver Input Analysis</h2>
+        <p class="text-xs text-slate-400 font-mono mt-1">Flying laps only. Brake is shown as % of the session's peak so it works even if the sensor scaling is off.</p>
+      </div>
+      <div id="input-kpis" class="grid grid-cols-2 lg:grid-cols-5 gap-3"></div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="panel p-4 space-y-2"><h3 class="font-display font-bold text-sm text-white"><i class="fa-solid fa-chart-column text-amber-400 mr-1"></i> THROTTLE POSITION — TIME SPENT</h3><div class="chart-box h-48"><canvas id="ch-tps-hist"></canvas></div></div>
+        <div class="panel p-4 space-y-2"><h3 class="font-display font-bold text-sm text-white"><i class="fa-solid fa-chart-column text-red-400 mr-1"></i> BRAKE APPLICATION — TIME SPENT (when braking)</h3><div class="chart-box h-48"><canvas id="ch-brake-hist"></canvas></div></div>
+      </div>
+      <div class="panel p-4 space-y-3">
+        <h3 class="font-display font-bold text-sm text-white"><i class="fa-solid fa-list-check text-emerald-400 mr-1"></i> LAP-BY-LAP INPUTS</h3>
+        <div class="overflow-x-auto"><table id="input-table" class="w-full text-left text-xs font-mono border-collapse whitespace-nowrap"></table></div>
+      </div>
+    </div>
+
+    <!-- SHIFTING -->
+    <div id="tab-shift" class="tab-content hidden space-y-4">
+      <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
+        <div>
+          <h2 class="font-display font-bold text-2xl text-white">Shift-Point Analysis</h2>
+          <p class="text-xs text-slate-400 font-mono mt-1">Flying laps only. Upshift RPM = peak RPM just before the gear changes. Half-gears in the log (e.g. 4.5) are treated as "mid-shift".</p>
+        </div>
+        <div class="panel p-3 flex flex-wrap items-end gap-3 text-xs font-mono">
+          <label class="flex flex-col gap-1 text-slate-400">Shift target<input id="cfg-target" type="number" step="50" class="w-24"></label>
+          <label class="flex flex-col gap-1 text-slate-400">Rev limit<input id="cfg-limit" type="number" step="50" class="w-24"></label>
+          <label class="flex flex-col gap-1 text-slate-400">Power band from<input id="cfg-band" type="number" step="50" class="w-24"></label>
+          <span id="cfg-note" class="text-[10px] text-slate-500 max-w-[16rem]"></span>
+        </div>
+      </div>
+      <div id="shift-kpis" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"></div>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="lg:col-span-2 panel p-4 space-y-2">
+          <div class="flex items-center justify-between"><h3 class="font-display font-bold text-sm text-white"><i class="fa-solid fa-chart-scatter text-purple-400 mr-1"></i> EVERY SHIFT, BY LOCATION ON TRACK</h3><span class="text-[10px] font-mono text-slate-400">● upshift RPM · ▲ peak RPM after downshift</span></div>
+          <div class="chart-box h-72"><canvas id="ch-shift"></canvas></div>
+        </div>
+        <div class="panel p-4 space-y-3">
+          <h3 class="font-display font-bold text-sm text-white"><i class="fa-solid fa-lightbulb text-amber-400 mr-1"></i> FINDINGS</h3>
+          <div id="shift-findings" class="space-y-2 text-xs text-slate-300 leading-relaxed"></div>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="panel p-4 space-y-2"><h3 class="font-display font-bold text-sm text-white"><i class="fa-solid fa-arrow-up-right-dots text-emerald-400 mr-1"></i> BY GEAR CHANGE</h3><div class="overflow-x-auto"><table id="shift-type-table" class="w-full text-left text-xs font-mono border-collapse whitespace-nowrap"></table></div></div>
+        <div class="panel p-4 space-y-2"><h3 class="font-display font-bold text-sm text-white"><i class="fa-solid fa-list-ol text-blue-400 mr-1"></i> BY LAP</h3><div class="overflow-x-auto"><table id="shift-lap-table" class="w-full text-left text-xs font-mono border-collapse whitespace-nowrap"></table></div></div>
+      </div>
+    </div>
+
+    <!-- SETUP / NOTES / WEATHER -->
+    <div id="tab-setup" class="tab-content hidden space-y-4">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="lg:col-span-2 panel p-4 space-y-3">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <div><h3 class="font-display font-bold text-base text-white"><i class="fa-solid fa-sliders text-sky-400 mr-1"></i> SETUP & NOTES — THIS SESSION</h3><p class="text-[11px] text-slate-400">Saved automatically in this browser, keyed to car + session date/time. Fill in only what you track.</p></div>
+            <span id="setup-saved" class="text-[10px] font-mono text-slate-500"></span>
+          </div>
+          <div id="setup-form" class="space-y-4"></div>
+        </div>
+        <div class="space-y-4">
+          <div class="panel p-4 space-y-3">
+            <div class="flex items-center justify-between"><h3 class="font-display font-bold text-sm text-white"><i class="fa-solid fa-cloud-sun text-amber-300 mr-1"></i> CONDITIONS</h3><button id="btn-wx-retry" class="text-[10px] font-mono text-slate-400 hover:text-white"><i class="fa-solid fa-rotate"></i> refresh</button></div>
+            <div id="wx-panel" class="text-xs font-mono"></div>
+            <div class="chart-box h-36"><canvas id="ch-wx"></canvas></div>
+            <p id="wx-source" class="text-[10px] text-slate-500 leading-relaxed"></p>
+          </div>
+        </div>
+      </div>
+      <div class="panel p-4 space-y-3">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div><h3 class="font-display font-bold text-base text-white"><i class="fa-solid fa-clock-rotate-left text-emerald-400 mr-1"></i> SESSION HISTORY — <span id="hist-vehicle"></span></h3><p class="text-[11px] text-slate-400">Every session you load for this car is logged here. Highlighted cells changed since the previous session at the same track.</p></div>
+          <div class="flex items-center gap-2 text-xs font-mono">
+            <button id="btn-hist-export" class="card px-3 py-1.5 hover:bg-slate-700"><i class="fa-solid fa-file-export text-blue-400"></i> Export log</button>
+            <label for="hist-import" class="card px-3 py-1.5 hover:bg-slate-700 cursor-pointer"><i class="fa-solid fa-file-import text-emerald-400"></i> Import log</label>
+            <input id="hist-import" type="file" accept=".json" class="hidden">
+          </div>
+        </div>
+        <div class="overflow-x-auto"><table id="hist-table" class="w-full text-left text-xs font-mono border-collapse whitespace-nowrap"></table></div>
+      </div>
+    </div>
+
+    <!-- MECHANIC -->
+    <div id="tab-mechanic" class="tab-content hidden space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 border-b border-racing-border pb-4">
+        <div><div class="text-[10px] kicker font-mono text-blue-400 mb-1">POST-SESSION SYSTEM REVIEW</div><h2 class="font-display font-bold text-2xl text-white">Engine & ECU Health</h2><p class="text-xs text-slate-400 mt-1">Stats use engine-running samples only. Channels flagged in the audit for suspect scaling are reported as "check scaling" instead of raising false alarms.</p></div>
+        <div id="mech-summary" class="text-xs font-mono text-slate-400"></div>
+      </div>
+      <div id="mech-cards" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="lg:col-span-2 panel p-4 space-y-2 self-start">
+          <div class="flex items-center justify-between"><h3 class="font-display font-bold text-sm text-white"><i class="fa-solid fa-temperature-half text-red-400 mr-1"></i> LAP-BY-LAP TRENDS</h3><select id="sel-mech-trend" class="text-xs font-mono"></select></div>
+          <div class="chart-box h-60"><canvas id="ch-mech-trend"></canvas></div>
+        </div>
+        <div class="panel p-4"><h3 class="font-display font-bold text-sm text-white mb-3"><i class="fa-solid fa-wrench text-amber-400 mr-1"></i> GARAGE NOTES</h3><div id="mech-notes" class="space-y-2 text-xs text-slate-300 leading-relaxed"></div></div>
+      </div>
+      <div class="panel overflow-hidden">
+        <div class="px-4 py-3 border-b border-racing-border flex items-center justify-between"><h3 class="font-display font-bold text-sm text-white"><i class="fa-solid fa-stethoscope text-blue-400 mr-2"></i>SYSTEM HEALTH TABLE</h3><span class="text-[10px] font-mono text-slate-500">MIN / AVG / MAX (ENGINE RUNNING)</span></div>
+        <div id="mech-table" class="divide-y divide-racing-border text-xs font-mono"></div>
+      </div>
+    </div>
+
+    <!-- AUDIT -->
+    <div id="tab-audit" class="tab-content hidden space-y-4">
+      <div class="panel p-4 space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 class="font-display font-bold text-base text-white"><i class="fa-solid fa-list-check text-emerald-400 mr-1"></i> CHANNEL AUDIT</h3>
+            <p class="text-xs text-slate-400">Every channel in the file, converted to display units and sanity-checked. Use <b>Scale</b> to correct a mis-calibrated sensor — it's remembered for this car in this browser.</p>
+          </div>
+          <div id="audit-summary" class="flex flex-wrap gap-2 text-[10px] font-mono"></div>
+        </div>
+        <div class="overflow-x-auto"><table id="audit-table" class="w-full text-left border-collapse text-xs font-mono"></table></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="report"></div>
+<div id="offscreen" style="position:absolute;left:-10000px;top:0;width:700px;height:520px"><canvas id="report-map"></canvas></div>
+<footer class="text-center text-[10px] font-mono text-slate-600 py-4">Apex Debrief · runs entirely in your browser</footer>
+
+<script>
+'use strict';
+// =====================================================================
+// CORE (pure data — no DOM) =============================================
+// =====================================================================
+const FLY_PCT = 1.05; // laps within 105% of the best count as flying
+const MPH_PER_KMH = 0.621371, PSI_PER_BAR = 14.5038, PSI_PER_KPA = 0.145038, FT_PER_M = 3.28084;
+
+const norm = s => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+const isNum = Number.isFinite;
+
+function parseTimeValue(v) {
+  const t = String(v ?? '').trim();
+  if (!t) return NaN;
+  if (t.includes(':')) {
+    const p = t.split(':').map(Number);
+    if (p.some(x => !isNum(x))) return NaN;
+    return p.length === 3 ? p[0]*3600 + p[1]*60 + p[2] : p[0]*60 + p[1];
+  }
+  const n = Number(t);
+  return isNum(n) ? n : NaN;
+}
+
+// Fast CSV parser (handles quotes, , or ; delimiters)
+function parseDelimited(text) {
+  text = text.replace(/^﻿/, '');
+  const firstLine = text.slice(0, text.indexOf('\n') > 0 ? text.indexOf('\n') : text.length);
+  const delim = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',';
+  const lines = text.split(/\r?\n/);
+  const rows = new Array(lines.length);
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
+    if (!line) { rows[li] = []; continue; }
+    if (line.indexOf('"') === -1) { rows[li] = line.split(delim); continue; }
+    const out = []; let v = ''; let q = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { if (q && line[i+1] === '"') { v += '"'; i++; } else q = !q; }
+      else if (c === delim && !q) { out.push(v); v = ''; }
+      else v += c;
+    }
+    out.push(v); rows[li] = out;
+  }
+  return rows;
+}
+
+// Logical channel lookup: exact normalized names first (in priority order), then "contains" for long aliases.
+const CHANNEL_MAP = {
+  time:    ['time','timestamp','elapsedtime'],
+  speed:   ['gpsspeed','speed','vehiclespeed','groundspeed','velocity'],
+  wspeed:  ['srfspeed','wheelspeed','ecuspeed'],
+  rpm:     ['srfrpm','rpm','enginerpm','enginespeed'],
+  tps:     ['srftps','tps','throttle','throttleposition','throttlepos','pps'],
+  brake:   ['brakef','brakefront','brakepressfront','brakepressure','brakepress','brake'],
+  braker:  ['braker','brakerear','brakepressrear'],
+  steer:   ['steering','steeringangle','steeringring','steeringpos','steer'],
+  latg:    ['gpslatacc','lateralacc','latacc','lateralg','latg'],
+  lng:     ['gpslonacc','gpslongacc','longitudinala','longitudinalacc','longacc','longg'],
+  gear:    ['srfgear','gear','currentgear'],
+  lat:     ['gpslatitude','latitude','gpslat'],
+  lon:     ['gpslongitude','longitude','gpslon','gpslong'],
+  alt:     ['gpsaltitude','altitude'],
+  dist:    ['distanceongpsspeed','distance','trackdistance','dist'],
+  ect:     ['srfect','ect','coolanttemp','watertemp','enginetemp','clt'],
+  oilt:    ['srfoilt','oiltemp','oiltemperature'],
+  oilp:    ['srfoilp','oilpressure','oilpress','oilp'],
+  fuelp:   ['srffuelp1','fuelpressure','fuelpress','fuelp'],
+  map:     ['srfmap1','map','manifoldpressure','mapsensor'],
+  lambda:  ['srflambda1','lambda1','lambda','afr','afr1'],
+  airt:    ['srfairt','airtemp','iat','intakeairtemp'],
+  ign:     ['srfignang','ignitionangle','ignangle','ignition'],
+  battery: ['battery','vbatt','batteryvoltage'],
+  ecuvolt: ['srfub','ecuvoltage'],
+  loggert: ['dataloggertem','dataloggertemp','loggertemp'],
+  nsat:    ['gpsnsat','nsat','satellites'],
+  lapcol:  ['lapnumber','lapnum','lapno','lap'],
+};
+const ENGINE_KEYS = new Set(['rpm','ect','oilt','oilp','fuelp','map','lambda','airt','ign','ecuvolt','gear','wspeed','tps']);
+
+function resolveLogical(names) {
+  const keys = names.map(norm), map = {};
+  for (const [logical, aliases] of Object.entries(CHANNEL_MAP)) {
+    let idx = -1;
+    for (const a of aliases) { idx = keys.indexOf(a); if (idx >= 0) break; }
+    if (idx < 0) for (const a of aliases) { if (a.length < 5) continue; idx = keys.findIndex(k => k.includes(a)); if (idx >= 0) break; }
+    if (idx >= 0) map[logical] = idx;
+  }
+  // GPS speed must never be resolved to the distance channel etc.
+  if (map.speed != null && keys[map.speed].includes('distance')) delete map.speed;
+  return map;
+}
+
+function median(arr) {
+  const v = Array.from(arr).filter(isNum).sort((a,b)=>a-b);
+  return v.length ? v[Math.floor(v.length/2)] : NaN;
+}
+function percentile(arr, p) {
+  const v = Array.from(arr).filter(isNum).sort((a,b)=>a-b);
+  return v.length ? v[Math.min(v.length-1, Math.floor(v.length*p))] : NaN;
+}
+function stats(arr, mask) {
+  let mn = Infinity, mx = -Infinity, sum = 0, n = 0;
+  for (let i = 0; i < arr.length; i++) {
+    if (mask && !mask[i]) continue;
+    const v = arr[i]; if (!isNum(v)) continue;
+    if (v < mn) mn = v; if (v > mx) mx = v; sum += v; n++;
+  }
+  return n ? { min: mn, max: mx, avg: sum/n, n } : { min: NaN, max: NaN, avg: NaN, n: 0 };
+}
+
+// Convert a raw column to display units. Returns { data, unit, conv, notes[] }
+function convertChannel(name, rawUnit, logical, raw) {
+  const u = String(rawUnit || '').trim().toLowerCase();
+  let data = raw, unit = String(rawUnit || '').trim(), conv = '', notes = [];
+  const map = f => { const o = new Float64Array(raw.length); for (let i=0;i<raw.length;i++) o[i] = raw[i]*f; return o; };
+  if (u === 'km/h' || u === 'kph') { data = map(MPH_PER_KMH); unit = 'mph'; conv = 'km/h → mph'; }
+  else if (u === 'm/s' && (logical === 'speed' || /speed/i.test(name))) { data = map(2.23694); unit = 'mph'; conv = 'm/s → mph'; }
+  else if (u === 'bar') { data = map(PSI_PER_BAR); unit = 'psi'; conv = 'bar → psi'; }
+  else if (u === 'kpa') { data = map(PSI_PER_KPA); unit = 'psi'; conv = 'kPa → psi'; }
+  else if (u === 'c' || u === '°c' || u === 'degc') { data = new Float64Array(raw.length); for (let i=0;i<raw.length;i++) data[i] = raw[i]*9/5+32; unit = '°F'; conv = '°C → °F'; }
+  else if (u === 'mm') { data = map(0.001); unit = 'm'; conv = 'mm → m'; }
+  else if (u === 'm' && logical === 'alt') { data = map(FT_PER_M); unit = 'ft'; conv = 'm → ft'; }
+  else if (u === 'mv') { data = map(0.001); unit = 'V'; conv = 'mV → V'; }
+
+  // Voltage sanity: some ECU streams arrive scaled ×1000 or ×1e6
+  if (unit.toLowerCase() === 'v' || logical === 'battery' || logical === 'ecuvolt') {
+    let med = median(data.filter ? data.filter(v => v !== 0) : data), f = 1;
+    while (isNum(med) && med > 100) { med /= 1000; f /= 1000; }
+    if (f !== 1) {
+      const src = data; data = new Float64Array(src.length); for (let i=0;i<src.length;i++) data[i] = src[i]*f;
+      unit = 'V'; conv = (conv ? conv + ', ' : '') + `auto-rescaled ×${f.toExponential(0)}`;
+      notes.push({ level: 'info', text: `Values were ${1/f}× too large for a 12 V system — auto-corrected to volts.` });
+    }
+  }
+  if ((u === 'a/f' || u === 'afr') && median(Array.from(raw).filter(v=>v>0)) < 3) {
+    unit = 'λ'; conv = 'labelled A/F, values are λ';
+    notes.push({ level: 'info', text: 'Labelled A/F in the file but values are lambda (≈1.0). Shown as λ (multiply by 14.7 for gasoline AFR).' });
+  }
+  if (logical === 'gear') {
+    let bad = 0; const o = new Float64Array(raw.length);
+    for (let i=0;i<raw.length;i++) { const g = raw[i]; if (g < 0 || g > 6) { o[i] = NaN; bad++; } else o[i] = g; }
+    data = o; unit = 'gear';
+    if (bad) notes.push({ level: 'info', text: `${bad.toLocaleString()} samples reported an out-of-range gear code (e.g. 9 = neutral/invalid). Ignored.` });
+  }
+  if (/radius/i.test(name)) {
+    let s = 0; const o = Float64Array.from(data); for (let i=0;i<o.length;i++) if (o[i] >= 9999) { o[i] = NaN; s++; }
+    if (s) { data = o; notes.push({ level: 'info', text: '10000 m = "straight line" placeholder; excluded from stats.' }); }
+  }
+  return { data, unit: unit || '—', conv, notes };
+}
+
+function splitAimSections(rows) {
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 80); i++) {
+    const r = rows[i];
+    if (r && r.length > 3 && norm(r[0]) === 'time') { headerIdx = i; break; }
+  }
+  if (headerIdx === -1) return null;
+  const metadata = {};
+  for (let i = 0; i < headerIdx; i++) {
+    const r = rows[i]; if (!r || !r.length) continue;
+    const k = String(r[0] ?? '').trim(); if (!k) continue;
+    const vals = r.slice(1).map(v => String(v ?? '').trim()).filter(v => v !== '');
+    metadata[k] = vals.length === 1 ? vals[0] : vals;
+  }
+  let start = headerIdx + 1, units = null;
+  const cand = rows[start];
+  if (cand && cand.length > 1) {
+    const numeric = cand.filter(v => String(v).trim() !== '' && isNum(Number(v))).length;
+    if (numeric < cand.length/2) { units = cand; start++; }
+  }
+  return { header: rows[headerIdx], units, metadata, dataStart: start };
+}
+const metaVal = (m, k) => { const v = m ? m[k] : undefined; return Array.isArray(v) ? v[0] : v; };
+
+function buildSession(fileName, text, lastModified, calibration) {
+  const rows = parseDelimited(text);
+  const aim = splitAimSections(rows);
+  const header = aim ? aim.header : rows[0];
+  const units = aim ? aim.units : null;
+  const meta = aim ? aim.metadata : {};
+  let dataStart = aim ? aim.dataStart : 1;
+  const ncol = header.length;
+  const dataRows = [];
+  for (let i = dataStart; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || r.length < Math.max(2, ncol/2)) continue;
+    if (!r.some(v => String(v).trim() !== '')) continue;
+    dataRows.push(r);
+  }
+  const n = dataRows.length;
+  if (n < 10) throw new Error('No telemetry rows found — is this an AiM CSV export?');
+
+  const names = header.map((h, i) => String(h || `Column ${i+1}`).trim());
+  const logicalMap = resolveLogical(names);
+  const logicalOf = {}; Object.entries(logicalMap).forEach(([k, i]) => { if (logicalOf[i] == null) logicalOf[i] = k; });
+
+  // Columns
+  const cols = names.map(() => new Float64Array(n));
+  for (let r = 0; r < n; r++) {
+    const row = dataRows[r];
+    for (let c = 0; c < ncol; c++) {
+      const s = row[c];
+      cols[c][r] = (s === undefined || s === '' ) ? NaN : +s;
+    }
+  }
+
+  // Time base
+  const sampleRate = Number(metaVal(meta, 'Sample Rate'));
+  let time;
+  if (logicalMap.time != null && stats(cols[logicalMap.time]).n > n*0.9) time = cols[logicalMap.time];
+  else { const dt = sampleRate > 0 ? 1/sampleRate : 0.1; time = new Float64Array(n); for (let i=0;i<n;i++) time[i] = i*dt; }
+  const hz = sampleRate > 0 ? sampleRate : Math.round((n-1) / ((time[n-1] - time[0]) || 1));
+
+  // Engine running mask
+  const rpmRaw = logicalMap.rpm != null ? cols[logicalMap.rpm] : null;
+  const running = new Uint8Array(n);
+  for (let i=0;i<n;i++) running[i] = rpmRaw ? (rpmRaw[i] > 400 ? 1 : 0) : 1;
+
+  const vehicle = metaVal(meta, 'Vehicle') || 'unknown';
+  const channels = [];
+  names.forEach((name, c) => {
+    if (logicalMap.time === c) return;
+    const logical = logicalOf[c] || null;
+    const rawUnit = units ? String(units[c] ?? '').trim() : '';
+    const cv = convertChannel(name, rawUnit, logical, cols[c]);
+    const isEngine = (logical && ENGINE_KEYS.has(logical)) || /^srf\s/i.test(name);
+    const ch = { name, rawUnit, unit: cv.unit, conv: cv.conv, logical, isEngine, base: cv.data, data: cv.data, notes: cv.notes, cal: { scale: 1, offset: 0 } };
+    const cal = calibration && calibration(vehicle, name);
+    if (cal && (cal.scale !== 1 || cal.offset !== 0)) applyCal(ch, cal);
+    channels.push(ch);
+  });
+
+  const sess = {
+    id: `s-${lastModified || 0}-${Math.random().toString(36).slice(2,8)}`,
+    file: fileName, meta, n, hz, time, running, channels,
+    track: metaVal(meta, 'Track') || metaVal(meta, 'Circuit') || metaVal(meta, 'Session') || 'Unknown track',
+    driver: metaVal(meta, 'Racer') || metaVal(meta, 'Driver') || '—',
+    vehicle, championship: metaVal(meta, 'Championship') || '',
+    date: metaVal(meta, 'Date') || '', clock: metaVal(meta, 'Time') || '',
+    comment: metaVal(meta, 'Comment') || '',
+  };
+  sess.L = {}; channels.forEach((ch, i) => { if (ch.logical && sess.L[ch.logical] == null) sess.L[ch.logical] = i; });
+  finishSession(sess);
+  return sess;
+}
+
+function applyCal(ch, cal) {
+  ch.cal = { scale: cal.scale, offset: cal.offset };
+  const o = new Float64Array(ch.base.length);
+  for (let i=0;i<o.length;i++) o[i] = ch.base[i]*cal.scale + cal.offset;
+  ch.data = o;
+}
+
+const chData = (sess, logical) => sess.L[logical] != null ? sess.channels[sess.L[logical]].data : null;
+const chObj  = (sess, logical) => sess.L[logical] != null ? sess.channels[sess.L[logical]] : null;
+
+// Everything derived from channel data — re-run after calibration changes.
+function finishSession(sess) {
+  auditChannels(sess);
+  buildDerived(sess);
+  buildLaps(sess);
+  buildLapDistance(sess);
+  sess.hasGPS = !!(chData(sess,'lat') && chData(sess,'lon') && stats(chData(sess,'lat')).n > 50);
+  if (sess.hasGPS) buildXY(sess);
+  lapSummaries(sess);
+}
+
+function auditChannels(sess) {
+  const rpmS = chData(sess,'rpm') ? stats(chData(sess,'rpm'), sess.running) : null;
+  sess.channels.forEach(ch => {
+    const mask = ch.isEngine && chData(sess,'rpm') ? sess.running : null;
+    ch.stats = stats(ch.data, mask);
+    ch.allStats = stats(ch.data);
+    const issues = ch.notes.slice();
+    const s = ch.stats;
+    let status = 'ok';
+    const k = ch.logical, mx = s.max;
+    if (!s.n || (s.max - s.min) < 1e-9) { status = 'dead'; issues.unshift({ level: 'dead', text: s.n ? `Flat at ${fmtNum(s.max)} for the whole session — sensor not connected or not configured.` : 'No numeric data.' }); }
+    else {
+      const sus = t => { status = 'suspect'; issues.unshift({ level: 'suspect', text: t }); };
+      const peakRpm = rpmS ? Math.round(rpmS.max) : null;
+      if (k === 'oilp' && mx < 15) sus(`Peak only ${fmtNum(mx)} psi${peakRpm ? ` while the engine reached ${peakRpm} rpm` : ''}. Real oil pressure under load is usually 40–70 psi — likely a scaling error in the RS3 ECU/CAN channel config.`);
+      if (k === 'fuelp' && mx < 20) sus(`Peak only ${fmtNum(mx)} psi. A port-injected engine typically runs ~40–45 psi — likely a scaling error.`);
+      if (k === 'map' && mx < 5) sus(`Peak only ${fmtNum(mx)} psi. Manifold pressure at full throttle should be close to atmospheric (~14 psi) — likely a scaling error.`);
+      if ((k === 'brake' || k === 'braker') && mx < 100) sus(`Peak only ${fmtNum(mx)} psi. Hard stops normally show several hundred psi or more — check the sensor calibration. Brake analysis uses % of peak, so it still works.`);
+      if ((k === 'battery' || k === 'ecuvolt') && (s.avg < 9 || s.avg > 16)) sus(`Average ${fmtNum(s.avg)} V is outside a 12 V system's range.`);
+      if (/lateral acc/i.test(ch.name) && Math.abs(s.min) < 0.5*Math.abs(s.max)) issues.push({ level: 'info', text: `Range is lopsided (${fmtNum(s.min)} to ${fmtNum(s.max)} g) — check the logger's mounting orientation / IMU calibration. GPS LatAcc is used for analysis instead.` });
+      if (ch.isEngine && chData(sess,'rpm') && ch.allStats.n > s.n) issues.push({ level: 'muted', text: `Stats exclude ${(ch.allStats.n - s.n).toLocaleString()} engine-off samples.` });
+    }
+    if (ch.cal && (ch.cal.scale !== 1 || ch.cal.offset !== 0)) { issues.push({ level: 'info', text: `User calibration applied: ×${ch.cal.scale}${ch.cal.offset ? ` + ${ch.cal.offset}` : ''}` }); if (status === 'suspect') status = 'ok'; }
+    if (status === 'ok' && issues.some(i => i.level === 'info')) status = 'info';
+    ch.status = status; ch.issues = issues;
+  });
+}
+
+function buildDerived(sess) {
+  const n = sess.n;
+  // Brake as % of session peak, with rest offset removed (works even with bad sensor scaling)
+  const b = chData(sess, 'brake'), tps = chData(sess, 'tps');
+  if (b) {
+    let rest = NaN;
+    if (tps) { const v = []; for (let i=0;i<n;i++) if (tps[i] > 50) v.push(b[i]); rest = median(v); }
+    if (!isNum(rest)) rest = percentile(b, 0.2);
+    const peak = percentile(b, 0.999);
+    const span = (peak - rest) || 1;
+    const p = new Float64Array(n);
+    for (let i=0;i<n;i++) p[i] = Math.max(0, Math.min(100, (b[i] - rest) / span * 100));
+    sess.brakePct = p; sess.brakeRest = rest; sess.brakePeak = peak;
+  } else sess.brakePct = null;
+}
+
+function buildLaps(sess) {
+  const m = sess.meta, n = sess.n, t = sess.time;
+  const laps = [];
+  const beacons = Array.isArray(m['Beacon Markers']) ? m['Beacon Markers'].map(Number).filter(isNum)
+                : (m['Beacon Markers'] != null ? [Number(m['Beacon Markers'])].filter(isNum) : []);
+  const segs = Array.isArray(m['Segment Times']) ? m['Segment Times'].map(parseTimeValue) : [];
+  const idxAt = time => { let lo = 0, hi = n-1; while (lo < hi) { const mid = (lo+hi)>>1; if (t[mid] < time) lo = mid+1; else hi = mid; } return lo; };
+  if (beacons.length) {
+    let prev = t[0];
+    beacons.forEach((end, i) => {
+      const seconds = isNum(segs[i]) ? segs[i] : end - prev;
+      laps.push({ num: i+1, start: prev, end, seconds });
+      prev = end;
+    });
+  } else if (sess.L.lapcol != null) {
+    const lc = chData(sess, 'lapcol'); let cur = lc[0], s = t[0];
+    for (let i=1;i<=n;i++) if (i === n || lc[i] !== cur) { laps.push({ num: laps.length+1, start: s, end: t[i-1], seconds: t[i-1]-s }); if (i<n) { cur = lc[i]; s = t[i]; } }
+  } else {
+    laps.push({ num: 1, start: t[0], end: t[n-1], seconds: t[n-1]-t[0] });
+  }
+  laps.forEach(l => { l.iStart = idxAt(l.start); l.iEnd = Math.max(l.iStart, Math.min(n-1, idxAt(l.end) - (t[idxAt(l.end)] > l.end ? 1 : 0))); });
+
+  // Classify
+  const N = laps.length;
+  const med = median(laps.map(l => l.seconds));
+  let cand = laps.map((_, i) => i).filter(i => laps[i].seconds > 0.6*med);
+  if (N > 2) cand = cand.filter(i => i !== 0);
+  if (!cand.length) cand = laps.map((_, i) => i);
+  const best = Math.min(...cand.map(i => laps[i].seconds));
+  laps.forEach((l, i) => {
+    if (N > 2 && i === 0) l.type = 'out';
+    else if (l.seconds < 0.6*med) l.type = 'partial';
+    else if (l.seconds <= best*FLY_PCT) l.type = 'flying';
+    else if (N > 2 && i === N-1) l.type = 'in';
+    else l.type = 'slow';
+    l.isBest = Math.abs(l.seconds - best) < 0.0005 && cand.includes(i);
+  });
+  sess.laps = laps; sess.bestSeconds = best;
+}
+
+function buildLapDistance(sess) {
+  const n = sess.n, t = sess.time, D = new Float64Array(n).fill(NaN), lapOf = new Int16Array(n).fill(-1);
+  const dist = chObj(sess, 'dist'), spd = chData(sess, 'speed') || chData(sess, 'wspeed');
+  const distM = dist && /^(m|meters?)$/i.test(dist.unit) ? dist.data : null;
+  sess.laps.forEach((l, li) => {
+    let acc = 0, maxD = 0;
+    for (let i = l.iStart; i <= l.iEnd; i++) {
+      lapOf[i] = li;
+      if (distM && isNum(distM[l.iStart])) acc = distM[i] - distM[l.iStart];
+      else if (spd && i > l.iStart) { const v = spd[i]; if (isNum(v)) acc += v*0.44704*(t[i]-t[i-1]); }
+      if (!isNum(acc)) acc = maxD;
+      maxD = Math.max(maxD, acc); D[i] = maxD; // monotonic
+    }
+    l.length = maxD;
+  });
+  sess.lapDist = D; sess.lapOf = lapOf;
+}
+
+function buildXY(sess) {
+  const lat = chData(sess,'lat'), lon = chData(sess,'lon'), n = sess.n;
+  const st = stats(lat), so = stats(lon);
+  const lat0 = (st.min+st.max)/2, lon0 = (so.min+so.max)/2, k = Math.cos(lat0*Math.PI/180);
+  const X = new Float64Array(n), Y = new Float64Array(n);
+  for (let i=0;i<n;i++) {
+    if (!isNum(lat[i]) || !isNum(lon[i]) || lat[i] === 0) { X[i] = NaN; Y[i] = NaN; continue; }
+    X[i] = (lon[i]-lon0)*111320*k; Y[i] = (lat[i]-lat0)*110574;
+  }
+  sess.X = X; sess.Y = Y; sess.proj = (la, lo) => [(lo-lon0)*111320*k, (la-lat0)*110574];
+}
+
+function lapSummaries(sess) {
+  const spd = chData(sess,'speed') || chData(sess,'wspeed');
+  sess.laps.forEach(l => {
+    let mx = -Infinity;
+    if (spd) for (let i=l.iStart;i<=l.iEnd;i++) if (spd[i] > mx) mx = spd[i];
+    l.topSpeed = isNum(mx) ? mx : NaN;
+  });
+}
+
+// ---------- Track splits ----------
+function parseTrackFile(text, fileName) {
+  const ext = fileName.split('.').pop().toLowerCase();
+  if (ext === 'amss') {
+    let data; try { data = JSON.parse(text); } catch (e) { throw new Error('AMSS file is not valid JSON.'); }
+    const raw = data.sectors || data.Sectors || [];
+    if (!raw.length) throw new Error('No split points found in AMSS file.');
+    // Every point in an RS3 split sequence is a split gate (type is RS3's split style, not on/off).
+    const gates = raw.slice().sort((a,b) => (a.index ?? 0) - (b.index ?? 0)).map((g, i) => ({
+      name: String(g.name || g.gate_point_name || (i+1)), lat: g.gate_point_latitude/1e7, lon: g.gate_point_longitude/1e7, type: g.type, index: g.index ?? i+1,
+    })).filter(g => isNum(g.lat) && isNum(g.lon) && g.lat !== 0);
+    return { mode: 'gps', name: (data.sequence && data.sequence.name) || fileName.replace(/\.[^.]+$/, ''), gates, file: fileName };
+  }
+  // ASD (INI): [Sector_N] Distance=
+  const sectors = []; let cur = null, trackName = null;
+  text.split(/\r?\n/).forEach(raw => {
+    const line = raw.trim(); if (!line || line.startsWith(';') || line.startsWith('//')) return;
+    const sec = line.match(/^\[(.+)\]$/);
+    if (sec) { const s = sec[1].toLowerCase(); cur = s.startsWith('sector') ? (sectors.push({}), sectors[sectors.length-1]) : (s === 'track' ? { _track: true } : null); return; }
+    const kv = line.match(/^([^=]+)=(.*)$/);
+    if (kv && cur) { if (cur._track && kv[1].trim().toLowerCase() === 'name') trackName = kv[2].trim(); else cur[kv[1].trim().toLowerCase()] = kv[2].trim(); }
+  });
+  const ds = sectors.map(s => Number(s.distance ?? s.startdistance)).filter(d => isNum(d) && d > 0).sort((a,b)=>a-b);
+  if (!ds.length) throw new Error('No sector distances found in ASD file.');
+  return { mode: 'distance', name: trackName || fileName, distances: ds, file: fileName };
+}
+
+function segIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
+  const rx = bx-ax, ry = by-ay, sx = dx-cx, sy = dy-cy;
+  const den = rx*sy - ry*sx; if (Math.abs(den) < 1e-12) return -1;
+  const qx = cx-ax, qy = cy-ay;
+  const t = (qx*sy - qy*sx)/den, u = (qx*ry - qy*rx)/den;
+  return (t >= 0 && t <= 1 && u >= 0 && u <= 1) ? t : -1;
+}
+
+function bestLap(sess) { return sess.laps.find(l => l.isBest) || sess.laps.find(l => l.type === 'flying') || sess.laps[0]; }
+
+// Sector timing via gate-line crossings (like RS3): each split point becomes a line
+// perpendicular to the racing line, and crossings are interpolated between samples.
+function computeSectors(sess, track) {
+  sess.gates = null; sess.sectorCount = 0; sess.sectorSource = null; sess.gatesNearSF = 0;
+  sess.laps.forEach(l => { l.sectors = []; l.bounds = []; l.boundIdx = []; });
+  if (!track) { sess.theo = NaN; return; }
+  const t = sess.time, D = sess.lapDist;
+  const interpIdx = (i, f) => ({ time: t[i] + f*(t[i+1]-t[i]), d: D[i] + f*(D[i+1]-D[i]) });
+
+  if (track.mode === 'gps') {
+    if (!sess.hasGPS) { sess.theo = NaN; return; }
+    const ref = bestLap(sess), X = sess.X, Y = sess.Y, W = 30;
+    const gates = [];
+    track.gates.forEach(g => {
+      const [gx, gy] = sess.proj(g.lat, g.lon);
+      let best = Infinity, k = -1;
+      for (let i = ref.iStart; i <= ref.iEnd; i++) { const dx = X[i]-gx, dy = Y[i]-gy, d2 = dx*dx+dy*dy; if (d2 < best) { best = d2; k = i; } }
+      if (k < 0 || Math.sqrt(best) > 60) return; // gate not on this trace
+      // A split point sitting on top of the beacon line just creates a sub-second noise sector
+      if (D[k] < 40 || ref.length - D[k] < 40) { sess.gatesNearSF = (sess.gatesNearSF || 0) + 1; return; }
+      const a = Math.max(ref.iStart, k-3), b = Math.min(ref.iEnd, k+3);
+      let hx = X[b]-X[a], hy = Y[b]-Y[a]; const hn = Math.hypot(hx, hy) || 1; hx /= hn; hy /= hn;
+      gates.push({ ...g, gx, gy, hx, hy, x1: gx - hy*W, y1: gy + hx*W, x2: gx + hy*W, y2: gy - hx*W, refD: D[k], offset: Math.sqrt(best) });
+    });
+    gates.sort((a,b) => a.refD - b.refD);
+    if (!gates.length) { sess.theo = NaN; sess.gateMiss = true; return; }
+    sess.gates = gates; sess.sectorSource = `${gates.length} gates · ${track.name}${sess.gatesNearSF ? ` (${sess.gatesNearSF} on S/F line merged)` : ''}`;
+    sess.gateMiss = Math.max(0, track.gates.length - gates.length - sess.gatesNearSF);
+    sess.laps.forEach(l => {
+      let cur = l.iStart; const cross = [];
+      gates.forEach(g => {
+        let found = null;
+        for (let i = cur; i < l.iEnd; i++) {
+          if (!isNum(X[i]) || !isNum(X[i+1])) continue;
+          const mx = X[i+1]-X[i], my = Y[i+1]-Y[i];
+          if (mx*g.hx + my*g.hy <= 0) continue;
+          const f = segIntersect(X[i], Y[i], X[i+1], Y[i+1], g.x1, g.y1, g.x2, g.y2);
+          if (f >= 0) { found = { ...interpIdx(i, f), i }; cur = i+1; break; }
+        }
+        cross.push(found);
+      });
+      finishLapSectors(l, cross);
+    });
+  } else {
+    sess.sectorSource = `${track.distances.length+1} sectors · ${track.name}`;
+    sess.laps.forEach(l => {
+      let cur = l.iStart; const cross = [];
+      track.distances.forEach(d => {
+        let found = null;
+        for (let i = cur; i < l.iEnd; i++) if (D[i] <= d && D[i+1] > d) { const f = (d - D[i])/(D[i+1]-D[i]); found = { ...interpIdx(i, f), i }; cur = i+1; break; }
+        cross.push(found);
+      });
+      finishLapSectors(l, cross);
+    });
+  }
+  sess.sectorCount = sess.laps.reduce((m, l) => Math.max(m, l.sectors.length), 0);
+  // Session best per sector & theoretical best (all laps except out/in/partial)
+  const eligible = sess.laps.filter(l => l.type === 'flying' || l.type === 'slow');
+  sess.sectorBest = [];
+  for (let s = 0; s < sess.sectorCount; s++) {
+    let best = Infinity, lap = null;
+    eligible.forEach(l => { const v = l.sectors[s]; if (isNum(v) && v < best) { best = v; lap = l.num; } });
+    sess.sectorBest.push(isNum(best) ? { time: best, lap } : null);
+  }
+  sess.theo = sess.sectorBest.length && sess.sectorBest.every(Boolean) ? sess.sectorBest.reduce((a, b) => a + b.time, 0) : NaN;
+}
+
+function finishLapSectors(l, cross) {
+  const bounds = [{ time: l.start, d: 0, i: l.iStart }, ...cross, { time: l.start + l.seconds, d: l.length, i: l.iEnd }];
+  l.bounds = bounds; l.sectors = [];
+  for (let s = 0; s < bounds.length-1; s++) {
+    const a = bounds[s], b = bounds[s+1];
+    l.sectors.push(a && b && b.time > a.time ? b.time - a.time : NaN);
+  }
+}
+
+// Resample a channel over a lap onto a distance grid (linear interpolation)
+function lapSeries(sess, lap, arr, grid, scale = 1, timeMode = false) {
+  const D = sess.lapDist, out = new Float64Array(grid.length);
+  let j = lap.iStart;
+  for (let g = 0; g < grid.length; g++) {
+    const target = grid[g]*scale;
+    while (j < lap.iEnd && D[j+1] <= target) j++;
+    let v;
+    if (j >= lap.iEnd) v = arr[lap.iEnd];
+    else { const d0 = D[j], d1 = D[j+1], f = d1 > d0 ? (target-d0)/(d1-d0) : 0; v = arr[j] + Math.max(0, Math.min(1, f))*(arr[j+1]-arr[j]); }
+    out[g] = timeMode ? v - lap.start : v;
+  }
+  return out;
+}
+function lapGrid(lap, step = 2) { const n = Math.max(2, Math.floor(lap.length/step)+1), g = new Float64Array(n); for (let i=0;i<n;i++) g[i] = Math.min(lap.length, i*step); return g; }
+
+// Per-lap per-sector metrics for coaching
+function sectorMetrics(sess, lap, s) {
+  const a = lap.bounds[s], b = lap.bounds[s+1]; if (!a || !b) return null;
+  const spd = chData(sess,'speed') || chData(sess,'wspeed'), tps = chData(sess,'tps'), bp = sess.brakePct, D = sess.lapDist, t = sess.time;
+  const i0 = a.i, i1 = Math.max(a.i, b.i);
+  let minS = Infinity, minD = NaN, brakeD = NaN, tpsSum = 0, fullT = 0, cnt = 0, coast = 0;
+  for (let i = i0; i <= i1; i++) {
+    if (spd && spd[i] < minS) { minS = spd[i]; minD = D[i] - a.d; }
+    if (bp && isNaN(brakeD) && bp[i] > 25) brakeD = D[i] - a.d;
+    if (tps) { tpsSum += tps[i]; if (tps[i] >= 90) fullT++; if (tps[i] < 5 && (!bp || bp[i] < 5) && spd && spd[i] > 20) coast++; }
+    cnt++;
+  }
+  const dt = cnt > 1 ? (t[i1]-t[i0])/(cnt-1) : 0;
+  return {
+    entry: spd ? spd[i0] : NaN, exit: spd ? spd[i1] : NaN, min: isNum(minS) ? minS : NaN, minD,
+    brakeD, avgTps: tps && cnt ? tpsSum/cnt : NaN, fullPct: tps && cnt ? 100*fullT/cnt : NaN, coastS: coast*dt, len: b.d - a.d,
+  };
+}
+
+function fmtNum(v, d) {
+  if (!isNum(v)) return '—';
+  if (d == null) d = Math.abs(v) >= 1000 ? 0 : Math.abs(v) >= 100 ? 1 : Math.abs(v) >= 1 ? 2 : 3;
+  return v.toFixed(d);
+}
+function fmtLap(s) { if (!isNum(s)) return '—'; const m = Math.floor(s/60), r = s - m*60; return `${m}:${r.toFixed(3).padStart(6, '0')}`; }
+function fmtDelta(s, d = 3) { if (!isNum(s)) return '—'; return (s >= 0 ? '+' : '−') + Math.abs(s).toFixed(d); }
+// ==== CORE END ====
+</script>
+
+<script>
+'use strict';
+// =====================================================================
+// UI ==================================================================
+// =====================================================================
+const S = { sessions: [], active: null, track: null, tab: 'snapshot', ref: null, cmp: null, cursorD: 0, charts: {}, grid: null, series: null };
+const $ = id => document.getElementById(id);
+const esc = v => String(v ?? '').replace(/[&<>'"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;' }[c]));
+const sess = () => S.sessions.find(s => s.id === S.active) || null;
+
+// ---- calibration persistence (per vehicle + channel, this browser only)
+const calKey = (veh, ch) => `apexCal:${veh}:${ch}`;
+function loadCal(veh, ch) { try { const v = localStorage.getItem(calKey(veh, ch)); return v ? JSON.parse(v) : null; } catch { return null; } }
+function saveCal(veh, ch, cal) { try { if (cal.scale === 1 && cal.offset === 0) localStorage.removeItem(calKey(veh, ch)); else localStorage.setItem(calKey(veh, ch), JSON.stringify(cal)); } catch {} }
+
+// ---- chart helpers
+const cursorPlugin = {
+  id: 'cursor',
+  afterDatasetsDraw(chart) {
+    const x = chart.options.plugins.cursor && chart.options.plugins.cursor.x;
+    if (x == null || !chart.scales.x) return;
+    const px = chart.scales.x.getPixelForValue(x), { top, bottom } = chart.chartArea;
+    if (px < chart.chartArea.left || px > chart.chartArea.right) return;
+    const ctx = chart.ctx; ctx.save(); ctx.strokeStyle = 'rgba(226,232,240,.55)'; ctx.lineWidth = 1; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px, bottom); ctx.stroke(); ctx.restore();
+  }
+};
+if (window.Chart) {
+  Chart.register(cursorPlugin);
+  Chart.defaults.color = '#94a3b8'; Chart.defaults.font.family = "'JetBrains Mono', monospace"; Chart.defaults.font.size = 10;
+}
+function killChart(id) { if (S.charts[id]) { S.charts[id].destroy(); delete S.charts[id]; } }
+const xy = (grid, arr) => { const o = new Array(grid.length); for (let i=0;i<grid.length;i++) o[i] = { x: grid[i], y: isNum(arr[i]) ? arr[i] : null }; return o; };
+function lineChart(id, datasets, opts = {}) {
+  killChart(id);
+  const el = $(id); if (!el || !window.Chart) return null;
+  const scales = {
+    x: { type: 'linear', min: opts.xMin, max: opts.xMax, grid: { color: '#1f2937' }, ticks: { maxTicksLimit: 12, callback: opts.xTick || (v => Math.round(v) + 'm') } },
+    y: { grid: { color: '#1f2937' }, min: opts.yMin, max: opts.yMax, ticks: { maxTicksLimit: 6 } },
+  };
+  if (opts.y2) scales.y2 = { position: 'right', grid: { display: false }, ...opts.y2 };
+  const ch = new Chart(el.getContext('2d'), {
+    type: 'line',
+    data: { datasets: datasets.map(d => ({ pointRadius: 0, borderWidth: 1.5, spanGaps: true, tension: 0, ...d })) },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false, parsing: false, normalized: true,
+      interaction: { mode: 'nearest', axis: 'x', intersect: false },
+      plugins: { legend: { display: !!opts.legend, labels: { boxWidth: 14, padding: 8 } }, cursor: { x: opts.cursor ? S.cursorD : null },
+        tooltip: { enabled: opts.tooltip !== false, callbacks: { title: items => items.length ? (opts.xTick || (v => Math.round(v)+' m'))(items[0].parsed.x) : '' } } },
+      scales,
+      onHover: opts.cursor ? (e, _, chart) => { const v = chart.scales.x.getValueForPixel(e.x); if (isNum(v)) setCursor(v); } : undefined,
+    }
+  });
+  S.charts[id] = ch; return ch;
+}
+function barChart(id, labels, datasets, opts = {}) {
+  killChart(id);
+  const el = $(id); if (!el || !window.Chart) return null;
+  const ch = new Chart(el.getContext('2d'), {
+    type: 'bar', data: { labels, datasets: datasets.map(d => ({ borderRadius: 3, ...d })) },
+    options: { responsive: true, maintainAspectRatio: false, animation: false, indexAxis: opts.horizontal ? 'y' : 'x',
+      plugins: { legend: { display: false }, tooltip: { callbacks: opts.tooltip || {} } },
+      scales: { x: { grid: { display: !!opts.horizontal, color: '#1f2937' }, ...(opts.x || {}) }, y: { grid: { color: '#1f2937' }, ...(opts.y || {}) } },
+      onClick: opts.onClick }
+  });
+  S.charts[id] = ch; return ch;
+}
+
+// ---- file handling
+$('csv-input').addEventListener('change', e => { handleFiles(Array.from(e.target.files)); e.target.value = ''; });
+$('track-input').addEventListener('change', e => { handleFiles(Array.from(e.target.files)); e.target.value = ''; });
+['dragenter','dragover'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); $('empty-state').classList.add('drop-active'); }));
+['dragleave','drop'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); $('empty-state').classList.remove('drop-active'); }));
+document.addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files.length) handleFiles(Array.from(e.dataTransfer.files)); });
+
+async function handleFiles(files) {
+  const trackFiles = files.filter(f => /\.(amss|asd)$/i.test(f.name));
+  const rawFiles = files.filter(f => /\.(drk|xrk|gpk|rrk|bak)$/i.test(f.name));
+  const csvFiles = files.filter(f => /\.(csv|txt)$/i.test(f.name));
+  if (rawFiles.length) alert(`${rawFiles.map(f=>f.name).join(', ')}: raw AiM logger files can't be decoded in a browser.\n\nIn Race Studio 3: right-click the session → "Export items as…" → CSV, then upload the .csv here.\nTip: Settings → Download Preferences → "Create CSV file(s) on download" makes RS3 produce the CSV automatically.`);
+  for (const f of trackFiles) {
+    try { S.track = parseTrackFile(await f.text(), f.name); }
+    catch (err) { alert(`${f.name}: ${err.message}`); }
+  }
+  if (csvFiles.length) {
+    showLoading(`Parsing ${csvFiles.length} file${csvFiles.length > 1 ? 's' : ''}…`);
+    await new Promise(r => setTimeout(r, 30));
+    for (const f of csvFiles) {
+      try {
+        showLoading(`Parsing ${f.name}…`); await new Promise(r => setTimeout(r, 10));
+        const s = buildSession(f.name, await f.text(), f.lastModified, loadCal);
+        S.sessions.push(s); S.active = s.id;
+      } catch (err) { console.error(err); alert(`Could not read ${f.name}: ${err.message}`); }
+    }
+    hideLoading();
+  }
+  S.sessions.forEach(s => { computeSectors(s, S.track); saveSessionSummary(s); });
+  if (sess()) { resetLapSelection(); renderAll(); S.sessions.forEach(s => fetchWeather(s)); }
+  else renderEmptyTrackStatus();
+}
+function showLoading(t) { $('loading').classList.remove('hidden'); $('loading-text').innerText = t; }
+function hideLoading() { $('loading').classList.add('hidden'); }
+function renderEmptyTrackStatus() {
+  const el = $('empty-track-status');
+  if (S.track) { el.classList.remove('hidden'); el.innerHTML = `<i class="fa-solid fa-circle-check text-purple-400 mr-1"></i> Splits loaded: ${esc(S.track.name)}`; }
+}
+
+$('btn-clear').addEventListener('click', () => {
+  if (!confirm('Clear all loaded sessions and track splits?')) return;
+  Object.keys(S.charts).forEach(killChart);
+  S.sessions = []; S.active = null; S.track = null;
+  $('app').classList.add('hidden'); $('empty-state').classList.remove('hidden'); $('empty-track-status').classList.add('hidden');
+  renderHeader();
+});
+
+$('btn-export').addEventListener('click', () => {
+  const s = sess(); if (!s) return alert('Load a session first.');
+  const chs = s.channels;
+  const head = ['Time (s)', 'Lap', 'Lap distance (m)', ...chs.map(c => `${c.name} (${c.unit})`)];
+  const lines = [head.map(h => `"${h.replace(/"/g,'""')}"`).join(',')];
+  for (let i = 0; i < s.n; i++) {
+    const li = s.lapOf[i];
+    const row = [s.time[i].toFixed(3), li >= 0 ? s.laps[li].num : '', isNum(s.lapDist[i]) ? s.lapDist[i].toFixed(1) : ''];
+    for (const c of chs) { const v = c.data[i]; row.push(isNum(v) ? +v.toFixed(4) : ''); }
+    lines.push(row.join(','));
+  }
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = s.file.replace(/\.[^.]+$/, '') + '_clean.csv'; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+});
+
+// ---- tabs
+document.querySelectorAll('#tabs .tab-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+function switchTab(tab) {
+  S.tab = tab;
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+  document.querySelectorAll('#tabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  $('tab-' + tab).classList.remove('hidden');
+  renderTab(tab);
+}
+function renderTab(tab) {
+  const s = sess(); if (!s) return;
+  ({ snapshot: renderSnapshot, telemetry: renderTelemetry, coaching: renderCoaching, inputs: renderInputs, shift: renderShift, mechanic: renderMechanic, setup: renderSetup, audit: renderAudit })[tab](s);
+}
+function renderAll() {
+  const s = sess();
+  $('empty-state').classList.toggle('hidden', !!s);
+  $('app').classList.toggle('hidden', !s);
+  renderHeader(); if (!s) return;
+  renderStrip(s);
+  switchTab(S.tab);
+}
+
+function renderHeader() {
+  const s = sess();
+  $('hdr-track').innerText = s ? s.track : '—';
+  $('hdr-vehicle').innerText = s ? s.vehicle : '—';
+  $('hdr-driver').innerText = s ? s.driver : '—';
+  $('hdr-date').innerText = s ? [s.date, s.clock].filter(Boolean).join(' ') || '—' : '—';
+  const b = $('session-badge');
+  if (s) { b.className = 'text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-semibold'; b.innerHTML = `<i class="fa-solid fa-check-circle"></i> ${esc(s.driver.toUpperCase())} LOG LOADED`; }
+  else { b.className = 'text-[10px] px-2 py-0.5 rounded bg-slate-700/40 border border-slate-600 text-slate-300 font-semibold'; b.innerText = 'NO DATA LOADED'; }
+}
+
+function renderStrip(s) {
+  $('strip-file').innerText = s.file;
+  $('strip-tag').innerText = [s.championship, metaVal(s.meta, 'Session')].filter(Boolean).join(' · ') || 'Session';
+  const flying = s.laps.filter(l => l.type === 'flying').length;
+  $('strip-notes').innerText = [s.comment && `"${s.comment}"`, `${s.n.toLocaleString()} samples`, `${fmtLap(s.time[s.n-1]-s.time[0])} logged`, `${s.laps.length} laps (${flying} flying)`].filter(Boolean).join(' • ');
+  const warn = s.channels.filter(c => c.status === 'suspect' || c.status === 'dead').length;
+  const chips = [
+    `<span class="px-2 py-1 bg-racing-darkBg rounded border border-racing-border text-blue-400">${s.channels.length} channels</span>`,
+    `<span class="px-2 py-1 bg-racing-darkBg rounded border border-racing-border text-emerald-400">${s.hz} Hz</span>`,
+    s.hasGPS ? `<span class="px-2 py-1 bg-racing-darkBg rounded border border-racing-border text-purple-300">GPS</span>` : `<span class="px-2 py-1 bg-racing-darkBg rounded border border-racing-border text-slate-500">no GPS</span>`,
+    s.sectorSource ? `<span class="px-2 py-1 bg-racing-darkBg rounded border border-purple-500/40 text-purple-300"><i class="fa-solid fa-map-pin"></i> ${esc(s.sectorSource)}</span>`
+                   : `<label for="track-input" class="cursor-pointer px-2 py-1 bg-racing-darkBg rounded border border-dashed border-purple-500/40 text-purple-300/70 hover:text-purple-200">+ add .amss splits</label>`,
+    warn ? `<button onclick="switchTab('audit')" class="px-2 py-1 rounded border border-amber-500/40 bg-amber-500/10 text-amber-300"><i class="fa-solid fa-triangle-exclamation"></i> ${warn} channel warning${warn>1?'s':''}</button>` : '',
+  ];
+  chips.push(weatherChip(s));
+  if (s.gateMiss) chips.push(`<span class="px-2 py-1 rounded border border-amber-500/40 text-amber-300" title="Some split points are more than 60 m from this session's GPS trace — is it the same track?">${s.gateMiss} gate(s) off-track</span>`);
+  $('strip-chips').innerHTML = chips.join('');
+  $('tab-ch-count').innerText = s.channels.length;
+  $('sessions-wrap').classList.toggle('hidden', S.sessions.length < 2);
+  $('sessions-list').innerHTML = S.sessions.map(x => `<button data-id="${x.id}" class="px-2.5 py-1.5 rounded border text-xs font-mono ${x.id === S.active ? 'bg-blue-500/20 text-blue-300 border-blue-500/50' : 'bg-racing-darkBg text-slate-300 border-racing-border hover:border-slate-500'}">${esc(x.file)} <span class="text-slate-500">${fmtLap(x.bestSeconds)}</span></button>`).join('');
+  $('sessions-list').querySelectorAll('button').forEach(b => b.onclick = () => { S.active = b.dataset.id; resetLapSelection(); renderAll(); });
+}
+
+function resetLapSelection() {
+  const s = sess(); if (!s) return;
+  const best = bestLap(s);
+  S.ref = best ? best.num : null;
+  const flying = s.laps.filter(l => l.type === 'flying' && l.num !== S.ref);
+  // default compare: the median flying lap (a "typical" lap) rather than an outlier
+  const sorted = flying.slice().sort((a,b) => a.seconds - b.seconds);
+  S.cmp = sorted.length ? sorted[Math.floor(sorted.length/2)].num : null;
+  S.cursorD = 0;
+}
+
+// =====================================================================
+// SNAPSHOT
+// =====================================================================
+const TYPE_STYLE = {
+  flying: ['FLYING', 'text-slate-200', 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'],
+  slow: ['SLOW / CAUTION', 'text-amber-300', 'bg-amber-500/10 text-amber-300 border-amber-500/30'],
+  out: ['OUT LAP', 'text-slate-400', 'bg-slate-700/40 text-slate-300 border-slate-600'],
+  in: ['IN LAP', 'text-slate-400', 'bg-slate-700/40 text-slate-300 border-slate-600'],
+  partial: ['PARTIAL', 'text-slate-500', 'bg-slate-700/40 text-slate-400 border-slate-600'],
+};
+function kpi(label, value, sub, cls = 'text-white', border = 'border-racing-border') {
+  return `<div class="panel p-3.5 ${border}"><div class="text-[10px] text-slate-400 font-mono kicker">${label}</div><div class="font-display font-bold text-2xl ${cls} my-1">${value}</div><div class="text-[11px] font-mono text-slate-400">${sub}</div></div>`;
+}
+function renderSnapshot(s) {
+  const flying = s.laps.filter(l => l.type === 'flying');
+  const best = bestLap(s);
+  const avg = flying.length ? flying.reduce((a,l) => a+l.seconds, 0)/flying.length : NaN;
+  const sd = flying.length > 1 ? Math.sqrt(flying.reduce((a,l) => a+(l.seconds-avg)**2, 0)/flying.length) : NaN;
+  const top = s.laps.reduce((m,l) => isNum(l.topSpeed) && l.topSpeed > m.v ? { v: l.topSpeed, lap: l.num } : m, { v: -Infinity, lap: null });
+  const latg = chData(s,'latg'); const lg = latg ? stats(latg.map(Math.abs)) : null;
+  $('kpi-row').innerHTML = [
+    kpi('BEST LAP', fmtLap(best.seconds), `Lap ${best.num}`, 'text-emerald-400', 'border-emerald-500/40'),
+    kpi('THEORETICAL BEST', fmtLap(s.theo), isNum(s.theo) ? `${fmtDelta(s.theo - best.seconds)}s vs best` : 'needs .amss splits', 'text-purple-400', 'border-purple-500/40'),
+    kpi('AVG FLYING LAP', fmtLap(avg), isNum(sd) ? `σ ±${sd.toFixed(3)}s` : '—', 'text-blue-400'),
+    kpi('LAPS', `${s.laps.length}`, `${flying.length} flying · ${s.laps.filter(l=>l.type==='slow').length} slow`),
+    kpi('TOP SPEED', isNum(top.v) ? `${top.v.toFixed(1)}` : '—', top.lap ? `mph · Lap ${top.lap}` : 'mph', 'text-amber-400'),
+    kpi('PEAK LAT G', lg ? lg.max.toFixed(2) : '—', esc(chObj(s,'latg')?.name || 'no channel'), 'text-pink-400'),
+  ].join('');
+
+  // Lap table
+  const nS = s.sectorCount;
+  const head = `<thead><tr class="bg-racing-cardBg border-b border-racing-border text-slate-400"><th class="p-2 sticky-col">LAP</th><th class="p-2">TIME</th><th class="p-2">Δ BEST</th><th class="p-2">TYPE</th><th class="p-2">TOP</th>${Array.from({length:nS}, (_,i) => `<th class="p-2 text-right" title="Gate ${i ? esc(s.gates ? s.gates[i-1].name : i) : 'S/F'} → ${i < nS-1 ? esc(s.gates ? s.gates[i].name : i+1) : 'S/F'}">S${i+1}</th>`).join('')}</tr></thead>`;
+  const body = s.laps.map(l => {
+    const [label, tcls, badge] = TYPE_STYLE[l.type];
+    const sec = Array.from({length:nS}, (_,i) => {
+      const v = l.sectors[i], b = s.sectorBest[i];
+      const isB = b && isNum(v) && Math.abs(v - b.time) < 0.0005 && b.lap === l.num;
+      return `<td class="p-2 text-right ${isB ? 'text-purple-300 font-bold bg-purple-500/15' : (l.type === 'flying' ? 'text-slate-300' : 'text-slate-500')}">${isNum(v) ? v.toFixed(2) : '—'}</td>`;
+    }).join('');
+    return `<tr data-lap="${l.num}" class="hover:bg-slate-800/60 cursor-pointer ${l.isBest ? 'bg-emerald-500/5' : ''}">
+      <td class="p-2 font-bold sticky-col">L${l.num}</td>
+      <td class="p-2 font-bold ${l.isBest ? 'text-emerald-400' : tcls}">${fmtLap(l.seconds)}</td>
+      <td class="p-2 text-slate-400">${l.isBest ? 'BEST' : fmtDelta(l.seconds - s.bestSeconds)}</td>
+      <td class="p-2"><span class="px-1.5 py-0.5 rounded text-[9px] border ${badge}">${label}</span></td>
+      <td class="p-2 text-amber-400">${fmtNum(l.topSpeed, 1)}</td>${sec}</tr>`;
+  }).join('');
+  $('lap-table').innerHTML = head + `<tbody class="divide-y divide-racing-border/50">${body}</tbody>`;
+  $('lap-table').querySelectorAll('tr[data-lap]').forEach(tr => tr.onclick = () => {
+    const n = +tr.dataset.lap; if (n !== S.ref) S.cmp = n; switchTab('telemetry');
+  });
+
+  // Lap pace chart (flying laps)
+  $('lbl-theo').innerText = fmtLap(s.theo);
+  const lo = Math.floor(Math.min(s.bestSeconds, isNum(s.theo) ? s.theo : Infinity) - 0.5);
+  barChart('chart-laps', flying.map(l => `L${l.num}`), [{ data: flying.map(l => l.seconds), backgroundColor: flying.map(l => l.isBest ? '#10b981' : '#3b82f6') }],
+    { y: { min: lo, ticks: { callback: v => fmtLap(v) } }, tooltip: { label: c => fmtLap(c.parsed.y) },
+      onClick: (e, els) => { if (els.length) { const l = flying[els[0].index]; if (l.num !== S.ref) S.cmp = l.num; switchTab('telemetry'); } } });
+
+  // Sector opportunity
+  $('sum-theo').innerText = fmtLap(s.theo);
+  if (nS) {
+    $('sector-empty').classList.add('hidden'); $('sector-loss-wrap').classList.remove('hidden');
+    const losses = Array.from({length:nS}, (_,i) => {
+      const v = flying.map(l => l.sectors[i]).filter(isNum); const b = s.sectorBest[i];
+      return v.length && b ? v.reduce((a,x)=>a+x,0)/v.length - b.time : 0;
+    });
+    $('sector-loss-wrap').style.height = Math.max(220, nS*18) + 'px';
+    const mx = Math.max(...losses);
+    barChart('chart-sector-loss', losses.map((_,i) => `S${i+1}`), [{ data: losses, backgroundColor: losses.map(v => v > mx*0.66 ? '#ef4444' : v > mx*0.33 ? '#f59e0b' : '#3b82f6') }],
+      { horizontal: true, x: { ticks: { callback: v => '+' + (+v).toFixed(2) + 's' } }, tooltip: { label: c => `avg +${c.parsed.x.toFixed(3)}s vs best (L${s.sectorBest[c.dataIndex]?.lap})` } });
+  } else {
+    killChart('chart-sector-loss'); $('sector-empty').classList.remove('hidden'); $('sector-loss-wrap').classList.add('hidden');
+  }
+
+  // Highlights
+  const H = [];
+  H.push(['emerald', 'BEST LAP', `Lap ${best.num} — ${fmtLap(best.seconds)}${isNum(best.topSpeed) ? `, ${best.topSpeed.toFixed(1)} mph top speed` : ''}.`]);
+  if (isNum(s.theo)) {
+    const contrib = s.sectorBest.map((b, i) => ({ i, lap: b.lap, gain: best.sectors[i] - b.time })).filter(x => isNum(x.gain) && x.gain > 0.005).sort((a,b) => b.gain - a.gain).slice(0, 3);
+    H.push(['purple', 'THEORETICAL', `Best sectors combined = ${fmtLap(s.theo)} (${fmtDelta(s.theo - best.seconds)}s). Biggest gaps in your best lap: ${contrib.map(c => `S${c.i+1} ${fmtDelta(-c.gain)}s (L${c.lap})`).join(', ') || '—'}.`]);
+  }
+  if (isNum(sd)) H.push(['blue', 'CONSISTENCY', `${flying.length} flying laps averaging ${fmtLap(avg)}, σ ±${sd.toFixed(3)}s; spread ${(Math.max(...flying.map(l=>l.seconds)) - best.seconds).toFixed(3)}s.`]);
+  const slow = s.laps.filter(l => l.type === 'slow');
+  if (slow.length) H.push(['amber', 'SLOW LAPS', `${slow.length} lap${slow.length>1?'s':''} over 105% (${slow.map(l => 'L'+l.num).join(', ')}) — caution, traffic or pit. Excluded from pace stats.`]);
+  const warn = s.channels.filter(c => c.status === 'suspect');
+  if (warn.length) H.push(['red', 'DATA QUALITY', `${warn.length} channel${warn.length>1?'s':''} look mis-scaled (${warn.map(c => c.name).join(', ')}). See Channel Audit.`]);
+  const colors = { emerald: 'border-emerald-500 text-emerald-400', purple: 'border-purple-500 text-purple-400', blue: 'border-blue-500 text-blue-400', amber: 'border-amber-500 text-amber-400', red: 'border-red-500 text-red-400' };
+  $('highlights').innerHTML = H.map(([c, t, x]) => `<div class="p-2.5 rounded bg-slate-900 border-l-4 ${colors[c].split(' ')[0]}"><span class="${colors[c].split(' ')[1]} font-bold">[${t}]</span> <span class="text-slate-300">${esc(x)}</span></div>`).join('');
+}
+
+// =====================================================================
+// TELEMETRY
+// =====================================================================
+function lapByNum(s, n) { return s.laps.find(l => l.num === n) || null; }
+function lapOptions(s, includeNone) {
+  const opts = s.laps.filter(l => l.type !== 'partial').map(l => `<option value="${l.num}">L${l.num} — ${fmtLap(l.seconds)}${l.isBest ? ' (best)' : l.type !== 'flying' ? ` (${TYPE_STYLE[l.type][0].toLowerCase()})` : ''}</option>`);
+  return (includeNone ? '<option value="">None</option>' : '') + opts.join('');
+}
+$('sel-ref').addEventListener('change', e => { S.ref = +e.target.value; renderTelemetry(sess()); });
+$('sel-cmp').addEventListener('change', e => { S.cmp = e.target.value ? +e.target.value : null; renderTelemetry(sess()); });
+$('btn-swap').addEventListener('click', () => { if (!S.cmp) return; [S.ref, S.cmp] = [S.cmp, S.ref]; renderTelemetry(sess()); });
+$('scrubber').addEventListener('input', e => { if (S.grid) setCursor(S.grid[S.grid.length-1] * e.target.value/1000, true); });
+$('sel-explore').addEventListener('change', () => renderExplorer(sess()));
+$('sel-explore-mode').addEventListener('change', () => renderExplorer(sess()));
+
+function buildSeries(s) {
+  const ref = lapByNum(s, S.ref) || bestLap(s), cmp = S.cmp ? lapByNum(s, S.cmp) : null;
+  const grid = lapGrid(ref, 2), scale = cmp ? cmp.length/ref.length : 1;
+  const get = (lap, arr, sc, tm) => arr ? lapSeries(s, lap, arr, grid, sc, tm) : null;
+  const L = k => chData(s, k);
+  const spdArr = L('speed') || L('wspeed');
+  const series = { ref, cmp, grid, r: {}, c: {} };
+  const keys = { speed: spdArr, tps: L('tps'), brake: s.brakePct, rpm: L('rpm'), gear: L('gear'), steer: L('steer'), latg: L('latg') };
+  for (const [k, arr] of Object.entries(keys)) { series.r[k] = get(ref, arr, 1); if (cmp) series.c[k] = get(cmp, arr, scale); }
+  series.r.time = get(ref, s.time, 1, true);
+  if (cmp) {
+    series.c.time = get(cmp, s.time, scale, true);
+    series.delta = new Float64Array(grid.length);
+    for (let i=0;i<grid.length;i++) series.delta[i] = series.c.time[i] - series.r.time[i];
+  }
+  return series;
+}
+
+function renderTelemetry(s) {
+  if (!lapByNum(s, S.ref)) resetLapSelection();
+  $('sel-ref').innerHTML = lapOptions(s, false); $('sel-ref').value = S.ref;
+  $('sel-cmp').innerHTML = lapOptions(s, true); $('sel-cmp').value = S.cmp ?? '';
+  const ser = S.series = buildSeries(s); S.grid = ser.grid;
+  const { grid, r, c, ref, cmp } = ser;
+  const xMax = grid[grid.length-1];
+  $('lbl-lapdelta').innerHTML = cmp ? `<span class="text-slate-400">L${cmp.num} vs L${ref.num}:</span> <span class="${cmp.seconds > ref.seconds ? 'text-red-400' : 'text-emerald-400'} font-bold">${fmtDelta(cmp.seconds - ref.seconds)}s</span>` : '';
+  const D = (data, color, label, extra = {}) => ({ data: xy(grid, data), borderColor: color, label, ...extra });
+  const dash = { borderDash: [4, 3] };
+  const opt = { xMin: 0, xMax, cursor: true, legend: false };
+
+  lineChart('ch-speed', [ r.speed && D(r.speed, '#60a5fa', `L${ref.num}`), cmp && c.speed && D(c.speed, '#f87171', `L${cmp.num}`, dash) ].filter(Boolean), { ...opt, legend: true });
+  if (ser.delta) {
+    lineChart('ch-delta', [ D(ser.delta, '#f59e0b', 'Δ', { fill: { target: 'origin', above: 'rgba(239,68,68,.18)', below: 'rgba(16,185,129,.18)' } }) ], opt);
+  } else { lineChart('ch-delta', [], opt); }
+  lineChart('ch-pedals', [ r.tps && D(r.tps, '#f59e0b', 'TPS'), r.brake && D(r.brake, '#ef4444', 'Brake %'), cmp && c.tps && D(c.tps, '#fcd34d', 'TPS cmp', dash), cmp && c.brake && D(c.brake, '#fca5a5', 'Brake cmp', dash) ].filter(Boolean), { ...opt, yMin: 0, yMax: 105 });
+  lineChart('ch-rpm', [ r.rpm && D(r.rpm, '#10b981', 'RPM'), cmp && c.rpm && D(c.rpm, '#6ee7b7', 'RPM cmp', dash), r.gear && D(r.gear, '#a78bfa', 'Gear', { yAxisID: 'y2', stepped: true }) ].filter(Boolean), { ...opt, y2: { min: 0, max: 6, ticks: { stepSize: 1 } } });
+  lineChart('ch-steer', [ r.steer && D(r.steer, '#2dd4bf', 'Steer'), cmp && c.steer && D(c.steer, '#99f6e4', 'Steer cmp', dash), r.latg && D(r.latg, '#ec4899', 'Lat G', { yAxisID: 'y2' }) ].filter(Boolean), { ...opt, y2: { min: -2.2, max: 2.2 } });
+
+  // Gauges
+  const spdMax = Math.max(...s.laps.map(l => l.topSpeed).filter(isNum), 1), rpmMax = chData(s,'rpm') ? stats(chData(s,'rpm')).max : 1;
+  S.gaugeMax = { speed: spdMax, rpm: rpmMax };
+
+  // Sector compare
+  if (s.sectorCount && cmp) {
+    const rows = Array.from({ length: s.sectorCount }, (_, i) => {
+      const a = ref.sectors[i], b = cmp.sectors[i], d = b - a;
+      return `<tr class="border-b border-racing-border/40"><td class="py-1 pr-2 text-slate-400">S${i+1}</td><td class="py-1 pr-2 text-right">${fmtNum(a,3)}</td><td class="py-1 pr-2 text-right">${fmtNum(b,3)}</td><td class="py-1 text-right font-bold ${d > 0.02 ? 'text-red-400' : d < -0.02 ? 'text-emerald-400' : 'text-slate-400'}">${fmtDelta(d)}</td></tr>`;
+    }).join('');
+    $('sector-compare').innerHTML = `<table class="w-full"><thead><tr class="text-slate-500"><th class="text-left">SEC</th><th class="text-right">L${ref.num}</th><th class="text-right">L${cmp.num}</th><th class="text-right">Δ</th></tr></thead><tbody>${rows}</tbody></table>`;
+  } else {
+    $('sector-compare').innerHTML = `<div class="text-slate-500">${s.sectorCount ? 'Pick a compare lap to see sector deltas.' : 'Load an .amss split file for sector deltas.'}</div>`;
+  }
+
+  // Explorer select
+  const sel = $('sel-explore'), prev = sel.value;
+  sel.innerHTML = s.channels.map((ch, i) => `<option value="${i}">${esc(ch.name)} (${esc(ch.unit)})${ch.status === 'dead' ? ' — no signal' : ch.status === 'suspect' ? ' — check scaling' : ''}</option>`).join('');
+  sel.value = prev && s.channels[+prev] ? prev : String(s.L.oilt ?? s.L.speed ?? 0);
+  renderExplorer(s);
+  setCursor(Math.min(S.cursorD, xMax), false);
+}
+
+function renderExplorer(s) {
+  if (!s || !S.series) return;
+  const ch = s.channels[+$('sel-explore').value]; if (!ch) return;
+  const mode = $('sel-explore-mode').value;
+  $('explore-note').innerText = ch.issues.length ? ch.issues[0].text.slice(0, 140) : (ch.conv ? `converted: ${ch.conv}` : '');
+  if (mode === 'lap') {
+    const { grid, ref, cmp } = S.series;
+    const r = lapSeries(s, ref, ch.data, grid, 1), c = cmp ? lapSeries(s, cmp, ch.data, grid, cmp.length/ref.length) : null;
+    lineChart('ch-explore', [ { data: xy(grid, r), borderColor: '#2dd4bf', label: `L${ref.num}` }, c && { data: xy(grid, c), borderColor: '#f87171', borderDash: [4,3], label: `L${cmp.num}` } ].filter(Boolean),
+      { xMin: 0, xMax: grid[grid.length-1], cursor: true, legend: true });
+  } else {
+    // Min/max decimation so spikes survive at whole-session scale
+    const buckets = 1500, n = s.n, step = Math.max(1, Math.ceil(n / buckets)), pts = [];
+    for (let i = 0; i < n; i += step) {
+      let mn = Infinity, mx = -Infinity, imn = i, imx = i;
+      for (let j = i; j < Math.min(n, i+step); j++) { if (ch.isEngine && !s.running[j]) continue; const v = ch.data[j]; if (!isNum(v)) continue; if (v < mn) { mn = v; imn = j; } if (v > mx) { mx = v; imx = j; } }
+      if (!isNum(mn)) continue;
+      if (imn < imx) pts.push({ x: s.time[imn], y: mn }, { x: s.time[imx], y: mx }); else pts.push({ x: s.time[imx], y: mx }, { x: s.time[imn], y: mn });
+    }
+    lineChart('ch-explore', [{ data: pts, borderColor: '#2dd4bf', label: ch.name }], { xTick: v => fmtLap(v).replace(/\.\d+$/, ''), legend: false });
+    // Lap boundaries as light annotation via cursor plugin isn't enough; fine as-is.
+  }
+}
+
+function setCursor(d, fromScrubber) {
+  if (!S.series) return;
+  const { grid, r, c, ref, cmp } = S.series, xMax = grid[grid.length-1];
+  d = Math.max(0, Math.min(xMax, d)); S.cursorD = d;
+  const gi = Math.min(grid.length-1, Math.round(d / (grid[1] - grid[0] || 1)));
+  if (!fromScrubber) $('scrubber').value = Math.round(d / xMax * 1000);
+  ['ch-speed','ch-delta','ch-pedals','ch-rpm','ch-steer'].concat($('sel-explore-mode').value === 'lap' ? ['ch-explore'] : []).forEach(id => {
+    const ch = S.charts[id]; if (ch) { ch.options.plugins.cursor.x = d; ch.draw(); }
+  });
+  const v = (o, k) => o[k] ? o[k][gi] : NaN;
+  $('pos-readout').innerHTML = `${Math.round(d)} m · L${ref.num} ${fmtNum(v(r,'time'),2)}s${cmp ? ` · Δ <span class="${S.series.delta[gi] > 0 ? 'text-red-400' : 'text-emerald-400'}">${fmtDelta(S.series.delta[gi], 2)}</span>` : ''}`;
+  const g = (label, val, unit, cval, color, pct) => `<div class="card p-2"><div class="text-[9px] font-mono text-slate-400">${label}</div><div class="font-display font-bold text-xl ${color}">${val}<span class="text-[10px] text-slate-500 ml-1">${unit}</span></div>${cmp ? `<div class="text-[10px] font-mono text-slate-500">L${cmp.num}: ${cval}</div>` : ''}${pct != null ? `<div class="w-full bg-slate-800 rounded-full h-1 mt-1"><div class="h-1 rounded-full ${color.replace('text-','bg-')}" style="width:${Math.max(0,Math.min(100,pct))}%"></div></div>` : ''}</div>`;
+  const gm = S.gaugeMax;
+  $('gauges').innerHTML = [
+    g('SPEED', fmtNum(v(r,'speed'),1), 'mph', fmtNum(v(c,'speed'),1), 'text-blue-400', v(r,'speed')/gm.speed*100),
+    g('RPM', fmtNum(v(r,'rpm'),0), '', fmtNum(v(c,'rpm'),0), 'text-emerald-400', v(r,'rpm')/gm.rpm*100),
+    g('GEAR', isNum(v(r,'gear')) ? Math.round(v(r,'gear')) : '—', '', isNum(v(c,'gear')) ? Math.round(v(c,'gear')) : '—', 'text-purple-400'),
+    g('THROTTLE', fmtNum(v(r,'tps'),0), '%', fmtNum(v(c,'tps'),0), 'text-amber-400', v(r,'tps')),
+    g('BRAKE', fmtNum(v(r,'brake'),0), '% pk', fmtNum(v(c,'brake'),0), 'text-red-400', v(r,'brake')),
+    g('STEERING', fmtNum(v(r,'steer'),0), '°', fmtNum(v(c,'steer'),0), 'text-teal-300'),
+    g('LAT G', fmtNum(v(r,'latg'),2), 'g', fmtNum(v(c,'latg'),2), 'text-pink-400'),
+    g('DELTA', cmp ? fmtDelta(S.series.delta[gi], 2) : '—', 's', '', cmp && S.series.delta[gi] > 0 ? 'text-red-400' : 'text-emerald-400'),
+  ].join('');
+  drawTelemetryMap();
+}
+
+// =====================================================================
+// MAP
+// =====================================================================
+function speedColor(ratio) {
+  // red (slow) → amber → green (fast)
+  const stops = [[0, [239,68,68]], [0.5, [245,158,11]], [1, [16,185,129]]];
+  ratio = Math.max(0, Math.min(1, ratio));
+  for (let i = 1; i < stops.length; i++) if (ratio <= stops[i][0]) {
+    const [p0, c0] = stops[i-1], [p1, c1] = stops[i], f = (ratio-p0)/(p1-p0);
+    return `rgb(${c0.map((v, k) => Math.round(v + f*(c1[k]-v))).join(',')})`;
+  }
+  return 'rgb(16,185,129)';
+}
+function drawMap(canvas, s, lap, opts = {}) {
+  if (!canvas || !s.hasGPS) {
+    if (canvas) { const ctx = canvas.getContext('2d'); ctx.clearRect(0,0,canvas.width,canvas.height); }
+    return;
+  }
+  const dpr = opts.dpr || window.devicePixelRatio || 1, W = opts.width || canvas.parentElement.clientWidth || 600, H = opts.height || canvas.parentElement.clientHeight || 300;
+  const light = opts.theme === 'light';
+  canvas.width = W*dpr; canvas.height = H*dpr;
+  const ctx = canvas.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle = light ? '#ffffff' : '#070b12'; ctx.fillRect(0,0,W,H);
+  const X = s.X, Y = s.Y, spd = chData(s,'speed') || chData(s,'wspeed');
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let i = lap.iStart; i <= lap.iEnd; i++) if (isNum(X[i])) { x0 = Math.min(x0, X[i]); x1 = Math.max(x1, X[i]); y0 = Math.min(y0, Y[i]); y1 = Math.max(y1, Y[i]); }
+  if (!isNum(x0)) return;
+  const pad = 28, sc = Math.min((W-2*pad)/((x1-x0)||1), (H-2*pad)/((y1-y0)||1));
+  const ox = (W - (x1-x0)*sc)/2, oy = (H - (y1-y0)*sc)/2;
+  const tx = x => ox + (x-x0)*sc, ty = y => H - (oy + (y-y0)*sc);
+  // outline
+  ctx.lineWidth = 9; ctx.strokeStyle = light ? 'rgba(15,23,42,.08)' : 'rgba(255,255,255,.06)'; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath(); let started = false;
+  for (let i = lap.iStart; i <= lap.iEnd; i++) { if (!isNum(X[i])) continue; started ? ctx.lineTo(tx(X[i]), ty(Y[i])) : ctx.moveTo(tx(X[i]), ty(Y[i])); started = true; }
+  ctx.stroke();
+  // colored trace
+  let smin = Infinity, smax = -Infinity;
+  if (spd) for (let i = lap.iStart; i <= lap.iEnd; i++) { if (spd[i] < smin) smin = spd[i]; if (spd[i] > smax) smax = spd[i]; }
+  ctx.lineWidth = 3.5;
+  for (let i = lap.iStart+1; i <= lap.iEnd; i++) {
+    if (!isNum(X[i]) || !isNum(X[i-1])) continue;
+    let col = '#60a5fa';
+    if (opts.colorFn) col = opts.colorFn(s.lapDist[i]);
+    else if (spd) col = speedColor((spd[i]-smin)/((smax-smin)||1));
+    ctx.strokeStyle = col; ctx.beginPath(); ctx.moveTo(tx(X[i-1]), ty(Y[i-1])); ctx.lineTo(tx(X[i]), ty(Y[i])); ctx.stroke();
+  }
+  // gates
+  if (s.gates) s.gates.forEach((g, i) => {
+    const gx = tx(g.gx), gy = ty(g.gy), L = 9;
+    ctx.strokeStyle = light ? '#7c3aed' : '#c084fc'; ctx.lineWidth = 2; ctx.beginPath();
+    ctx.moveTo(gx - g.hy*L, gy - g.hx*L); ctx.lineTo(gx + g.hy*L, gy + g.hx*L); ctx.stroke();
+    if (opts.gateLabels !== false) { ctx.fillStyle = light ? '#4c1d95' : '#e9d5ff'; ctx.font = 'bold 10px JetBrains Mono, monospace'; ctx.fillText(String(i+1), gx + 6 + g.hy*4, gy - 6 + g.hx*4); }
+  });
+  // start/finish
+  const sf = lap.iStart; if (isNum(X[sf])) { ctx.fillStyle = light ? '#0f172a' : '#fff'; ctx.beginPath(); ctx.arc(tx(X[sf]), ty(Y[sf]), 5, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = light ? '#0f172a' : '#e2e8f0'; ctx.font = 'bold 10px monospace'; ctx.fillText('S/F', tx(X[sf]) + 8, ty(Y[sf]) + 4); }
+  // cursor
+  if (opts.cursorD != null) {
+    const D = s.lapDist; let j = lap.iStart; while (j < lap.iEnd && D[j] < opts.cursorD) j++;
+    if (isNum(X[j])) { ctx.fillStyle = '#3b82f6'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(tx(X[j]), ty(Y[j]), 7, 0, Math.PI*2); ctx.fill(); ctx.stroke(); }
+  }
+  if (opts.label) { ctx.fillStyle = 'rgba(15,23,42,.8)'; ctx.fillRect(0, 0, W, 20); ctx.fillStyle = '#94a3b8'; ctx.font = '10px monospace'; ctx.fillText(opts.label, 8, 14); }
+}
+function drawTelemetryMap() {
+  const s = sess(); if (!s || !S.series) return;
+  const { ref, cmp, delta, grid } = S.series;
+  let colorFn = null;
+  if (cmp && delta) {
+    // Color by where the compare lap gains/loses time (slope of delta over ~20 m)
+    const step = grid[1]-grid[0], w = Math.max(1, Math.round(10/step));
+    colorFn = d => {
+      const i = Math.min(grid.length-1-w, Math.max(w, Math.round(d/step)));
+      const slope = (delta[i+w] - delta[i-w]) / (2*w*step) * 100; // s per 100 m
+      return slope > 0.06 ? (slope > 0.25 ? '#ef4444' : '#f97316') : slope < -0.06 ? (slope < -0.25 ? '#10b981' : '#6ee7b7') : '#64748b';
+    };
+    $('map-legend').innerHTML = `<span style="color:#ef4444">■</span> L${cmp.num} losing · <span style="color:#10b981">■</span> gaining`;
+  } else $('map-legend').innerHTML = 'speed: <span style="color:#ef4444">■</span> slow → <span style="color:#10b981">■</span> fast';
+  drawMap($('map-telemetry'), s, ref, { colorFn, cursorD: S.cursorD, gateLabels: true });
+}
+window.addEventListener('resize', () => { if (S.tab === 'telemetry') drawTelemetryMap(); if (S.tab === 'coaching' && sess()) drawMap($('map-coach'), sess(), bestLap(sess()), { label: `Best lap — L${bestLap(sess()).num} (${fmtLap(bestLap(sess()).seconds)})` }); });
+
+// =====================================================================
+// COACHING
+// =====================================================================
+function renderCoaching(s) {
+  const best = bestLap(s);
+  if (s.hasGPS) drawMap($('map-coach'), s, best, { label: `Best lap — L${best.num} (${fmtLap(best.seconds)})${s.gates ? ` · ${s.gates.length} split gates` : ''}` });
+  else { const c = $('map-coach'); const ctx = c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height); }
+  const { cards, flying } = coachCards(s);
+  $('coach-grid').innerHTML = cards.map(c => c.html).join('');
+  cards.forEach((c, i) => { if (c.action) { const b = $('coach-grid').children[i].querySelector('button'); if (b) b.onclick = c.action; } });
+  $('coach-badge').innerText = `${cards.length} insights from ${flying.length} flying laps`;
+}
+function coachCards(s) {
+  const best = bestLap(s);
+  const flying = s.laps.filter(l => l.type === 'flying');
+  const cards = [];
+  if (flying.length < 2) return { flying, cards: [card('amber', 'Not enough flying laps', '—', 'Need at least two laps within 105% of the best to compare.', 'Run a longer session or check lap detection (Beacon Markers).', 'LOW', 'Lap timing')] };
+
+  // Sector opportunities
+  if (s.sectorCount) {
+    const opps = [];
+    for (let i = 0; i < s.sectorCount; i++) {
+      const laps = flying.filter(l => isNum(l.sectors[i])); if (laps.length < 2) continue;
+      const fastest = laps.reduce((a, b) => a.sectors[i] < b.sectors[i] ? a : b);
+      const avg = laps.reduce((a, l) => a + l.sectors[i], 0) / laps.length;
+      opps.push({ i, fastest, avg, loss: avg - fastest.sectors[i], others: laps.filter(l => l !== fastest) });
+    }
+    opps.sort((a, b) => b.loss - a.loss);
+    opps.slice(0, 4).forEach((o, rank) => {
+      const fm = sectorMetrics(s, o.fastest, o.i);
+      const om = o.others.map(l => sectorMetrics(s, l, o.i)).filter(Boolean);
+      const mean = k => { const v = om.map(m => m[k]).filter(isNum); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : NaN; };
+      const f = [], rec = [];
+      const dMin = fm.min - mean('min'), dBrake = fm.brakeD - mean('brakeD'), dExit = fm.exit - mean('exit'), dEntry = fm.entry - mean('entry'), dTps = fm.fullPct - mean('fullPct'), dCoast = fm.coastS - mean('coastS');
+      if (isNum(dEntry) && Math.abs(dEntry) >= 1) f.push(`entry speed ${fmtDelta(dEntry,1)} mph`);
+      if (isNum(dBrake) && Math.abs(dBrake) >= 3) f.push(`braked ${Math.abs(dBrake).toFixed(0)} m ${dBrake > 0 ? 'later' : 'earlier'}`);
+      if (isNum(dMin) && Math.abs(dMin) >= 0.8) f.push(`minimum speed ${fmtDelta(dMin,1)} mph (${fm.min.toFixed(1)} vs ${mean('min').toFixed(1)})`);
+      if (isNum(dExit) && Math.abs(dExit) >= 1) f.push(`exit speed ${fmtDelta(dExit,1)} mph`);
+      if (isNum(dTps) && Math.abs(dTps) >= 4) f.push(`full throttle ${fmtDelta(dTps,0)} pts of the sector`);
+      if (isNum(dCoast) && Math.abs(dCoast) >= 0.15) f.push(`coasting ${fmtDelta(dCoast,2)}s`);
+      if (dMin >= 0.8) rec.push(`Carry more speed through the middle — the fast version rolled ${dMin.toFixed(1)} mph quicker at the slowest point (~${Math.round(fm.minD)} m into the sector).`);
+      if (dBrake >= 3) rec.push(`Brake later: on L${o.fastest.num} you held off ${dBrake.toFixed(0)} m longer before reaching 25% brake.`);
+      else if (dBrake <= -3 && dMin > 0) rec.push(`The fast version actually braked ${Math.abs(dBrake).toFixed(0)} m earlier — slow-in/fast-out paid off here; don't over-drive the entry.`);
+      if (dExit >= 1) rec.push(`Prioritise the exit — ${dExit.toFixed(1)} mph more at the end of the sector carries down the next straight.`);
+      if (dCoast <= -0.15) rec.push(`Cut the coasting: ${Math.abs(dCoast).toFixed(2)}s less time off both pedals on the fast lap.`);
+      if (!rec.length) rec.push(`No single input explains it — overlay L${o.fastest.num} vs a typical lap in the Lap Overlay tab and look at line/steering.`);
+      const startG = o.i === 0 ? 'S/F' : `gate ${o.i}`, endG = o.i === s.sectorCount-1 ? 'S/F' : `gate ${o.i+1}`;
+      cards.push(card(rank === 0 ? 'red' : rank < 2 ? 'amber' : 'blue', `S${o.i+1} (${startG} → ${endG})`, `avg ${fmtDelta(o.loss)}s/lap`,
+        `Your best S${o.i+1} was ${o.fastest.sectors[o.i].toFixed(3)}s on L${o.fastest.num}; flying-lap average ${o.avg.toFixed(3)}s across ${o.others.length+1} laps. Fast version vs average: ${f.join(', ') || 'similar inputs'}.`,
+        rec.join(' '), o.others.length >= 4 ? 'HIGH' : 'MEDIUM', `Gate-crossing sector times + speed/brake/TPS`, rank + 1,
+        () => { S.ref = o.fastest.num; S.cmp = o.others.slice().sort((a,b)=>a.sectors[o.i]-b.sectors[o.i])[Math.floor(o.others.length/2)].num; S.cursorD = o.fastest.bounds[o.i].d; switchTab('telemetry'); }));
+    });
+  }
+
+  // Consistency
+  const avg = flying.reduce((a,l)=>a+l.seconds,0)/flying.length, sd = Math.sqrt(flying.reduce((a,l)=>a+(l.seconds-avg)**2,0)/flying.length);
+  cards.push(card(sd < 0.4 ? 'emerald' : sd < 1 ? 'amber' : 'red', 'Lap-to-lap consistency', `σ ±${sd.toFixed(3)}s`,
+    `${flying.length} flying laps, best ${fmtLap(best.seconds)}, average ${fmtLap(avg)} (${fmtDelta(avg - best.seconds)}s).${isNum(s.theo) ? ` Theoretical best ${fmtLap(s.theo)}.` : ''}`,
+    sd < 0.4 ? 'Consistency is strong — the remaining time is in individual sectors (see the cards above).' : 'Variation is costing more than any single corner. Pick reference points (braking boards, turn-in markers) for the top sectors and repeat them every lap.',
+    'HIGH', 'Beacon lap times'));
+
+  // Throttle / coasting
+  const tps = chData(s,'tps'), bp = s.brakePct, spd = chData(s,'speed') || chData(s,'wspeed');
+  if (tps) {
+    let full = 0, coast = 0, n = 0, dt = 1/s.hz;
+    flying.forEach(l => { for (let i = l.iStart; i <= l.iEnd; i++) { n++; if (tps[i] >= 90) full++; if (tps[i] < 5 && (!bp || bp[i] < 5) && spd && spd[i] > 20) coast++; } });
+    const fullPct = 100*full/n, coastPerLap = coast*dt/flying.length;
+    cards.push(card(coastPerLap < 1 ? 'emerald' : 'amber', 'Throttle commitment', `${fullPct.toFixed(0)}% full throttle`,
+      `Flying laps spend ${fullPct.toFixed(1)}% of the time at ≥90% throttle and ${coastPerLap.toFixed(2)}s per lap coasting (off both pedals above 20 mph).`,
+      coastPerLap > 1 ? 'Coasting is time with no tyre work. Trail the brake into the turn-in or pick up maintenance throttle earlier.' : 'Transitions are tight. Gains will come from earlier full-throttle application on exits.',
+      'MEDIUM', esc(chObj(s,'tps').name)));
+  }
+  if (!s.sectorCount) cards.unshift(card('blue', 'Unlock sector coaching', '+ .amss', 'Sector-by-sector coaching (where you lose time and which input explains it) needs the track split file.', 'Upload the RS3 .amss split file for this track using "Track Splits".', 'HIGH', 'Missing input'));
+  return { cards, flying };
+}
+function card(color, title, gain, findings, rec, conf, basis, priority, action) {
+  const C = { emerald: ['border-emerald-500/60', 'bg-emerald-500 text-slate-950', 'text-emerald-300'], amber: ['border-amber-500/60', 'bg-amber-500 text-slate-950', 'text-amber-300'], red: ['border-red-500/60', 'bg-red-500 text-white', 'text-red-300'], blue: ['border-blue-500/60', 'bg-blue-500 text-white', 'text-blue-300'] }[color];
+  return { action, color, title, gain, findings, rec, conf, kind: priority ? 'sector' : 'general', html: `<div class="bg-slate-900/90 border-2 ${C[0]} rounded-xl p-5 flex flex-col justify-between gap-4">
+    <div class="space-y-3">
+      <div class="flex items-center justify-between gap-2 flex-wrap">
+        <div class="flex items-center gap-2.5">${priority ? `<span class="px-2 py-0.5 ${C[1]} font-display font-bold text-[10px] rounded">#${priority}</span>` : ''}<h3 class="font-display font-bold text-base text-white">${esc(title)}</h3></div>
+        <span class="px-2 py-0.5 border border-slate-700 font-mono font-bold text-xs rounded ${C[2]}">${esc(gain)}</span>
+      </div>
+      <p class="text-xs text-slate-300 leading-relaxed"><b class="text-slate-100">Findings:</b> ${esc(findings)}</p>
+      <p class="text-xs text-slate-300 leading-relaxed"><b class="text-slate-100">Recommendation:</b> ${esc(rec)}</p>
+    </div>
+    <div class="pt-3 border-t border-slate-800 flex items-center justify-between text-[10px] font-mono text-slate-400">
+      <span>Confidence: <b class="${C[2]}">${conf}</b> · ${basis}</span>
+      ${action ? '<button class="text-blue-300 hover:text-blue-200"><i class="fa-solid fa-chart-line"></i> Show in overlay</button>' : ''}
+    </div></div>` };
+}
+
+// =====================================================================
+// DRIVER INPUTS
+// =====================================================================
+function renderInputs(s) {
+  const flying = s.laps.filter(l => l.type === 'flying');
+  const tps = chData(s,'tps'), bp = s.brakePct, spd = chData(s,'speed') || chData(s,'wspeed'), dt = 1/s.hz;
+  const per = flying.map(l => {
+    let n = 0, sum = 0, full = 0, coast = 0, ov = 0, ev = 0, prevOn = false, bSum = 0, bN = 0;
+    for (let i = l.iStart; i <= l.iEnd; i++) {
+      n++;
+      const t = tps ? tps[i] : NaN, b = bp ? bp[i] : 0;
+      if (isNum(t)) { sum += t; if (t >= 90) full++; }
+      if (isNum(t) && t < 5 && b < 5 && spd && spd[i] > 20) coast++;
+      if (isNum(t) && t > 10 && b > 10) ov++;
+      const on = b > 25; if (on && !prevOn) ev++; prevOn = on;
+      if (b > 10) { bSum += b; bN++; }
+    }
+    return { lap: l, avgTps: sum/n, full: 100*full/n, coast: coast*dt, overlap: ov*dt, events: ev, brakeTime: bN*dt };
+  });
+  const mean = k => per.length ? per.reduce((a,p) => a+p[k], 0)/per.length : NaN;
+  const k = (label, val, sub, cls) => `<div class="panel p-4 text-center"><div class="text-[10px] font-mono text-slate-500 kicker">${label}</div><div class="font-display font-bold text-3xl ${cls}">${val}</div><div class="text-[10px] font-mono text-slate-500">${sub}</div></div>`;
+  $('input-kpis').innerHTML = [
+    k('FULL THROTTLE', tps ? mean('full').toFixed(1)+'%' : '—', 'time at ≥90% TPS', 'text-emerald-400'),
+    k('AVG THROTTLE', tps ? mean('avgTps').toFixed(1)+'%' : '—', 'flying laps', 'text-blue-400'),
+    k('COASTING', tps ? mean('coast').toFixed(2)+'s' : '—', 'per lap, off both pedals', 'text-amber-400'),
+    k('OVERLAP', tps && bp ? mean('overlap').toFixed(2)+'s' : '—', 'per lap, TPS>10% & brake>10% (incl. heel-toe blips)', 'text-orange-400'),
+    k('BRAKE ZONES', bp ? mean('events').toFixed(1) : '—', 'per lap (>25% of peak)', 'text-red-400'),
+  ].join('');
+
+  // Histograms (time-weighted)
+  const tb = Array(10).fill(0), bb = Array(10).fill(0);
+  flying.forEach(l => { for (let i = l.iStart; i <= l.iEnd; i++) {
+    if (tps && isNum(tps[i])) tb[Math.min(9, Math.max(0, Math.floor(tps[i]/10)))] += dt;
+    if (bp && bp[i] > 5) bb[Math.min(9, Math.floor(bp[i]/10))] += dt;
+  } });
+  const perLap = a => a.map(v => v/(flying.length||1));
+  const lbl = Array.from({length:10}, (_,i) => `${i*10}-${i*10+10}%`);
+  barChart('ch-tps-hist', lbl, [{ data: perLap(tb), backgroundColor: tb.map((_,i) => i >= 9 ? '#10b981' : i >= 5 ? '#f59e0b' : '#3b82f6') }], { y: { ticks: { callback: v => v + 's' } }, tooltip: { label: c => `${c.parsed.y.toFixed(2)} s per lap` } });
+  barChart('ch-brake-hist', lbl, [{ data: perLap(bb), backgroundColor: bb.map((_,i) => i >= 7 ? '#ef4444' : i >= 4 ? '#f97316' : '#fbbf24') }], { y: { ticks: { callback: v => v + 's' } }, tooltip: { label: c => `${c.parsed.y.toFixed(2)} s per lap` } });
+
+  const bestFull = Math.max(...per.map(p => p.full));
+  $('input-table').innerHTML = `<thead><tr class="text-slate-400 border-b border-racing-border bg-racing-cardBg"><th class="p-2">LAP</th><th class="p-2">TIME</th><th class="p-2">AVG TPS</th><th class="p-2">FULL THROTTLE</th><th class="p-2">COASTING</th><th class="p-2">OVERLAP</th><th class="p-2">BRAKE ZONES</th><th class="p-2">TIME BRAKING</th></tr></thead><tbody class="divide-y divide-racing-border/40">` +
+    per.map(p => `<tr class="${p.lap.isBest ? 'bg-emerald-500/5' : ''}"><td class="p-2 ${p.lap.isBest ? 'text-emerald-400 font-bold' : ''}">L${p.lap.num}</td><td class="p-2">${fmtLap(p.lap.seconds)}</td><td class="p-2">${fmtNum(p.avgTps,1)}%</td><td class="p-2 ${p.full >= bestFull - 1 ? 'text-emerald-400' : ''}">${fmtNum(p.full,1)}%</td><td class="p-2 ${p.coast > mean('coast')*1.3 ? 'text-amber-400' : ''}">${p.coast.toFixed(2)}s</td><td class="p-2 ${p.overlap > 0.5 ? 'text-orange-400' : ''}">${p.overlap.toFixed(2)}s</td><td class="p-2">${p.events}</td><td class="p-2">${p.brakeTime.toFixed(1)}s</td></tr>`).join('') + '</tbody>';
+}
+
+// =====================================================================
+// MECHANIC
+// =====================================================================
+const MECH = [
+  { k: 'ect', label: 'Coolant temp', agg: 'max', unit: '°F', rule: v => v > 230 ? 'red' : v > 215 ? 'amber' : 'ok' },
+  { k: 'oilt', label: 'Oil temp', agg: 'max', unit: '°F', rule: v => v > 270 ? 'red' : v > 250 ? 'amber' : 'ok' },
+  { k: 'oilp', label: 'Oil pressure (min @ >3000 rpm)', agg: 'minload', unit: 'psi', rule: v => v < 20 ? 'red' : v < 30 ? 'amber' : 'ok' },
+  { k: 'fuelp', label: 'Fuel pressure (min)', agg: 'min', unit: 'psi', rule: v => v < 35 ? 'amber' : 'ok' },
+  { k: 'battery', label: 'Battery (logger)', agg: 'avg', unit: 'V', rule: v => v < 12.8 ? 'amber' : v > 15 ? 'amber' : 'ok' },
+  { k: 'ecuvolt', label: 'ECU supply', agg: 'avg', unit: 'V', rule: v => v < 12.8 ? 'amber' : v > 15 ? 'amber' : 'ok' },
+  { k: 'lambda', label: 'Lambda @ WOT', agg: 'wot', unit: 'λ', rule: v => v > 0.95 ? 'amber' : v < 0.78 ? 'amber' : 'ok' },
+  { k: 'airt', label: 'Intake air temp', agg: 'max', unit: '°F', rule: v => v > 130 ? 'amber' : 'ok' },
+  { k: 'map', label: 'Manifold pressure (max)', agg: 'max', unit: 'psi', rule: () => 'ok' },
+  { k: 'ign', label: 'Ignition advance (max)', agg: 'max', unit: '°', rule: () => 'ok' },
+  { k: 'loggert', label: 'Logger temp', agg: 'max', unit: '°F', rule: v => v > 158 ? 'amber' : 'ok' },
+];
+function mechValue(s, m, lap) {
+  const ch = chObj(s, m.k); if (!ch) return NaN;
+  const d = ch.data, rpm = chData(s,'rpm'), tps = chData(s,'tps');
+  const i0 = lap ? lap.iStart : 0, i1 = lap ? lap.iEnd : s.n-1;
+  let mn = Infinity, mx = -Infinity, sum = 0, n = 0;
+  for (let i = i0; i <= i1; i++) {
+    if (!s.running[i]) continue;
+    if (m.agg === 'minload' && !(rpm && rpm[i] > 3000)) continue;
+    if (m.agg === 'wot' && !(tps && tps[i] > 90 && rpm && rpm[i] > 3500)) continue;
+    const v = d[i]; if (!isNum(v)) continue;
+    if (v < mn) mn = v; if (v > mx) mx = v; sum += v; n++;
+  }
+  if (!n) return NaN;
+  return { max: mx, min: mn, minload: mn, avg: sum/n, wot: sum/n }[m.agg];
+}
+$('sel-mech-trend').addEventListener('change', () => renderMechTrend(sess()));
+ function mechEvals(s) {
+  return MECH.map(m => ({ m, ch: chObj(s, m.k) })).filter(r => r.ch).map(r => {
+    const v = mechValue(s, r.m);
+    const state = r.ch.status === 'dead' ? 'dead' : r.ch.status === 'suspect' ? 'scale' : isNum(v) ? r.m.rule(v) : 'dead';
+    return { ...r, v, state };
+  });
+}
+function renderMechanic(s) {
+  const BADGE = { ok: ['NORMAL','bg-emerald-500/10 border-emerald-500/30 text-emerald-300'], amber: ['WATCH','bg-amber-500/10 border-amber-500/30 text-amber-300'], red: ['ATTENTION','bg-red-500/10 border-red-500/30 text-red-300'], scale: ['CHECK SCALING','bg-slate-700/50 border-slate-500 text-slate-300'], dead: ['NO SIGNAL','bg-slate-800 border-slate-700 text-slate-500'] };
+  const evals = mechEvals(s);
+  $('mech-summary').innerText = `${evals.length} systems · ${evals.filter(e => e.state === 'ok').length} normal · ${evals.filter(e => e.state === 'amber' || e.state === 'red').length} flagged · ${evals.filter(e => e.state === 'scale').length} need calibration`;
+  $('mech-cards').innerHTML = evals.slice(0, 8).map(e => `<div class="card p-3 flex justify-between items-start gap-2"><div><div class="text-[10px] text-slate-400 font-mono">${esc(e.m.label.toUpperCase())}</div><div class="font-bold text-lg font-mono ${e.state === 'red' ? 'text-red-400' : e.state === 'amber' ? 'text-amber-400' : e.state === 'ok' ? 'text-emerald-400' : 'text-slate-400'}">${fmtNum(e.v, e.m.unit === 'λ' ? 3 : 1)} <span class="text-xs text-slate-500">${e.m.unit}</span></div><div class="text-[10px] text-slate-500 font-mono">${esc(e.ch.name)}</div></div><span class="text-[9px] px-1.5 py-0.5 rounded border font-mono ${BADGE[e.state][1]}">${BADGE[e.state][0]}</span></div>`).join('');
+  $('mech-table').innerHTML = evals.map(e => { const st = e.ch.stats; return `<div class="grid grid-cols-[1fr_auto_auto] gap-3 px-4 py-2.5 items-center"><div><div class="text-slate-200 font-semibold">${esc(e.m.label)}</div><div class="text-[10px] text-slate-500">${esc(e.ch.name)} · min ${fmtNum(st.min)} / avg ${fmtNum(st.avg)} / max ${fmtNum(st.max)} ${esc(e.ch.unit)}</div></div><div class="text-slate-100 font-bold">${fmtNum(e.v, e.m.unit === 'λ' ? 3 : 1)} ${e.m.unit}</div><span class="text-[10px] px-2 py-1 rounded border ${BADGE[e.state][1]}">${BADGE[e.state][0]}</span></div>`; }).join('') || '<div class="p-4 text-slate-500">No engine/electrical channels recognised in this export.</div>';
+
+  // Notes
+  const N = [];
+  const get = k => evals.find(e => e.m.k === k);
+  const ect = get('ect'), oilt = get('oilt'), lam = get('lambda'), bat = get('battery') || get('ecuvolt');
+  if (ect && isNum(ect.v)) N.push(['ok', `Coolant peaked at ${ect.v.toFixed(0)} °F${ect.state === 'ok' ? ' — healthy margin.' : ' — check radiator airflow, coolant level and bleed before the next long run.'}`]);
+  if (oilt && isNum(oilt.v)) N.push([oilt.state === 'ok' ? 'ok' : 'amber', `Oil temperature peaked at ${oilt.v.toFixed(0)} °F${oilt.state === 'ok' ? '.' : ' — inspect cooler ducting and oil level.'}`]);
+  if (lam && isNum(lam.v) && lam.state !== 'scale') N.push([lam.state === 'ok' ? 'ok' : 'amber', `Average lambda at wide-open throttle was ${lam.v.toFixed(3)}${lam.v > 0.95 ? ' — leaner than a typical power target (~0.85–0.90). Check fuel delivery and the O₂ sensor.' : '.'}`]);
+  if (bat && isNum(bat.v)) N.push([bat.state === 'ok' ? 'ok' : 'amber', `Charging voltage averaged ${bat.v.toFixed(2)} V while running${bat.state === 'ok' ? ' — alternator/charging normal.' : '.'}`]);
+  evals.filter(e => e.state === 'scale').forEach(e => N.push(['scale', `${e.ch.name}: ${e.ch.issues[0]?.text || 'value looks mis-scaled.'} Fix it in the Channel Audit tab (Scale) and this report will re-evaluate.`]));
+  evals.filter(e => e.state === 'dead').forEach(e => N.push(['dead', `${e.ch.name} has no signal this session.`]));
+  const missing = ['Tyre temps/pressures', 'Wheel speeds', 'Damper position'].filter(x => !s.channels.some(c => new RegExp(x.split(' ')[0].slice(0,4), 'i').test(c.name)));
+  if (missing.length) N.push(['info', `Not logged: ${missing.join(', ')}. Adding them would make chassis/setup recommendations possible.`]);
+  const ic = { ok: 'border-emerald-500/40', amber: 'border-amber-500/40', scale: 'border-slate-500', dead: 'border-slate-700', info: 'border-blue-500/40' };
+  $('mech-notes').innerHTML = N.map(([c, t]) => `<div class="p-2.5 rounded-lg bg-slate-900 border-l-4 ${ic[c]}">${esc(t)}</div>`).join('');
+
+  // Trend select
+  const sel = $('sel-mech-trend'), prev = sel.value;
+  sel.innerHTML = evals.filter(e => e.state !== 'dead').map(e => `<option value="${e.m.k}">${esc(e.m.label)}</option>`).join('');
+  if (prev && evals.some(e => e.m.k === prev)) sel.value = prev;
+  renderMechTrend(s);
+}
+function renderMechTrend(s) {
+  const k = $('sel-mech-trend').value, m = MECH.find(x => x.k === k); if (!m) { killChart('ch-mech-trend'); return; }
+  const laps = s.laps.filter(l => l.type !== 'partial');
+  const vals = laps.map(l => { const v = mechValue(s, m, l); return isNum(v) ? v : null; });
+  barChart('ch-mech-trend', laps.map(l => `L${l.num}`), [{ data: vals, backgroundColor: laps.map(l => l.type === 'flying' ? '#3b82f6' : '#475569') }],
+    { y: { beginAtZero: false, title: { display: true, text: `${m.label} (${m.unit})` } }, tooltip: { label: c => `${fmtNum(c.parsed.y, 2)} ${m.unit} · ${TYPE_STYLE[laps[c.dataIndex].type][0].toLowerCase()}` } });
+}
+
+// =====================================================================
+// AUDIT
+// =====================================================================
+function renderAudit(s) {
+  const ST = { ok: ['OK','bg-emerald-500/10 text-emerald-300 border-emerald-500/30'], info: ['NOTE','bg-blue-500/10 text-blue-300 border-blue-500/30'], suspect: ['CHECK SCALING','bg-amber-500/10 text-amber-300 border-amber-500/30'], dead: ['NO SIGNAL','bg-red-500/10 text-red-300 border-red-500/30'] };
+  const counts = { ok: 0, info: 0, suspect: 0, dead: 0 }; s.channels.forEach(c => counts[c.status]++);
+  $('audit-summary').innerHTML = Object.entries(counts).filter(([,v]) => v).map(([k, v]) => `<span class="px-2 py-1 rounded border ${ST[k][1]}">${v} ${ST[k][0]}</span>`).join('');
+  $('audit-table').innerHTML = `<thead><tr class="bg-racing-cardBg border-b border-racing-border text-slate-400"><th class="p-2">#</th><th class="p-2">CHANNEL</th><th class="p-2">FILE UNIT → SHOWN</th><th class="p-2 text-right">MIN</th><th class="p-2 text-right">AVG</th><th class="p-2 text-right">MAX</th><th class="p-2">USED AS</th><th class="p-2">STATUS</th><th class="p-2">SCALE</th></tr></thead><tbody class="divide-y divide-racing-border/50">` +
+    s.channels.map((c, i) => `<tr class="align-top hover:bg-slate-800/30">
+      <td class="p-2 text-slate-500">${i+1}</td>
+      <td class="p-2"><div class="font-bold text-slate-200">${esc(c.name)}</div>${c.issues.map(x => `<div class="text-[10px] mt-0.5 ${x.level === 'suspect' ? 'text-amber-300' : x.level === 'dead' ? 'text-red-300' : 'text-slate-400'} max-w-md whitespace-normal">${esc(x.text)}</div>`).join('')}</td>
+      <td class="p-2 text-amber-300 whitespace-nowrap">${esc(c.rawUnit || '—')} → ${esc(c.unit)}</td>
+      <td class="p-2 text-right text-slate-300">${fmtNum(c.stats.min)}</td><td class="p-2 text-right text-blue-300">${fmtNum(c.stats.avg)}</td><td class="p-2 text-right text-slate-300">${fmtNum(c.stats.max)}</td>
+      <td class="p-2 text-purple-300">${c.logical && c.logical !== 'lapcol' ? esc(c.logical) : '<span class="text-slate-600">—</span>'}</td>
+      <td class="p-2"><span class="px-1.5 py-0.5 rounded text-[9px] border whitespace-nowrap ${ST[c.status][1]}">${ST[c.status][0]}</span></td>
+      <td class="p-2 whitespace-nowrap"><input type="number" step="any" value="${c.cal.scale}" data-ch="${i}" class="cal-input w-20 text-xs">${c.cal.scale !== 1 ? ` <button data-reset="${i}" class="text-slate-400 hover:text-white" title="Reset"><i class="fa-solid fa-rotate-left"></i></button>` : ''}</td>
+    </tr>`).join('') + '</tbody>';
+  $('audit-table').querySelectorAll('.cal-input').forEach(inp => inp.addEventListener('change', () => setCal(s, +inp.dataset.ch, Number(inp.value))));
+  $('audit-table').querySelectorAll('[data-reset]').forEach(b => b.addEventListener('click', () => setCal(s, +b.dataset.reset, 1)));
+}
+function setCal(s, idx, scale) {
+  if (!isNum(scale) || scale === 0) return;
+  const ch = s.channels[idx];
+  applyCal(ch, { scale, offset: 0 }); saveCal(s.vehicle, ch.name, ch.cal);
+  finishSession(s); computeSectors(s, S.track); saveSessionSummary(s);
+  renderStrip(s); renderAudit(s);
+}
+
+renderHeader();
+</script>
+
+<script>
+'use strict';
+// =====================================================================
+// SHIFT-POINT ANALYSIS
+// =====================================================================
+const shiftKey = veh => `apexShift:${veh}`;
+function shiftConfig(s) {
+  let saved = null; try { saved = JSON.parse(localStorage.getItem(shiftKey(s.vehicle)) || 'null'); } catch {}
+  const rpm = chData(s, 'rpm');
+  const peak = rpm ? stats(rpm).max : 7000;
+  const limit = Math.ceil(peak / 100) * 100;
+  const def = { limit, target: limit - 300, band: Math.round(limit * 0.65 / 100) * 100, derived: true };
+  return saved ? { ...def, ...saved, derived: false } : def;
+}
+['cfg-target', 'cfg-limit', 'cfg-band'].forEach(id => document.getElementById(id).addEventListener('change', () => {
+  const s = sess(); if (!s) return;
+  const cfg = { target: +$('cfg-target').value, limit: +$('cfg-limit').value, band: +$('cfg-band').value };
+  if (![cfg.target, cfg.limit, cfg.band].every(v => isNum(v) && v > 0)) return;
+  try { localStorage.setItem(shiftKey(s.vehicle), JSON.stringify(cfg)); } catch {}
+  renderShift(s);
+}));
+
+function computeShifts(s, cfg) {
+  const gearCh = chObj(s, 'gear'), rpm = chData(s, 'rpm');
+  if (!gearCh || !rpm) return null;
+  const G = gearCh.data, tps = chData(s, 'tps'), spd = chData(s, 'speed') || chData(s, 'wspeed'), D = s.lapDist, dt = 1 / s.hz;
+  const stable = g => isNum(g) && g >= 1 && g <= 6 && Math.abs(g - Math.round(g)) < 0.01;
+  const flying = s.laps.filter(l => l.type === 'flying');
+  const shifts = [], perLap = [];
+  const lugBins = new Map();
+  flying.forEach(l => {
+    let prevG = null, prevIdx = -1, lug = 0, lim = 0;
+    for (let i = l.iStart; i <= l.iEnd; i++) {
+      const g = G[i], r = rpm[i];
+      if (r >= cfg.limit - 50) lim++;
+      if (stable(g) && Math.round(g) >= 2 && tps && tps[i] > 90 && r < cfg.band && (!spd || spd[i] > 20)) {
+        lug++; const bin = Math.floor(D[i] / 100) * 100; lugBins.set(bin, (lugBins.get(bin) || 0) + dt);
+      }
+      if (!stable(g)) continue;
+      const gi = Math.round(g);
+      if (prevG == null) { prevG = gi; prevIdx = i; continue; }
+      if (gi !== prevG) {
+        let ok = true;
+        for (let k = 1; k <= 3 && i + k <= l.iEnd; k++) if (!stable(G[i + k]) || Math.round(G[i + k]) !== gi) { ok = false; break; }
+        if (!ok) continue;
+        if ((i - prevIdx) * dt > 1.5) { prevG = gi; prevIdx = i; continue; }
+        if (gi > prevG) {
+          let mx = -Infinity, at = prevIdx, tmax = 0;
+          for (let k = Math.max(l.iStart, prevIdx - 10); k <= i; k++) if (rpm[k] > mx) { mx = rpm[k]; at = k; }
+          if (tps) for (let k = Math.max(l.iStart, prevIdx - 20); k <= i; k++) tmax = Math.max(tmax, tps[k]);
+          shifts.push({ dir: 'up', from: prevG, to: gi, rpm: mx, d: D[at], lap: l.num, wot: !tps || tmax > 80 });
+        } else {
+          let mx = -Infinity, at = i;
+          for (let k = i; k <= Math.min(l.iEnd, i + 20); k++) if (rpm[k] > mx) { mx = rpm[k]; at = k; }
+          shifts.push({ dir: 'down', from: prevG, to: gi, rpm: mx, d: D[at], lap: l.num, speed: spd ? spd[i] : NaN });
+        }
+        prevG = gi;
+      }
+      prevIdx = i;
+    }
+    const ups = shifts.filter(x => x.lap === l.num && x.dir === 'up' && x.wot);
+    perLap.push({
+      lap: l, ups: ups.length, avgUp: ups.length ? ups.reduce((a, x) => a + x.rpm, 0) / ups.length : NaN,
+      early: ups.filter(x => x.rpm < cfg.target - 250).length,
+      over: shifts.filter(x => x.lap === l.num && x.dir === 'down' && x.rpm > cfg.limit).length,
+      lug: lug * dt, lim: lim * dt,
+    });
+  });
+  const byType = {};
+  shifts.forEach(x => { const k = `${x.from}→${x.to}`; (byType[k] = byType[k] || { key: k, dir: x.dir, from: x.from, to: x.to, list: [] }).list.push(x); });
+  const types = Object.values(byType).map(t => {
+    const v = t.list.filter(x => t.dir === 'down' || x.wot).map(x => x.rpm); const n = v.length;
+    const avg = n ? v.reduce((a, b) => a + b, 0) / n : NaN;
+    const sd = n > 1 ? Math.sqrt(v.reduce((a, b) => a + (b - avg) ** 2, 0) / n) : NaN;
+    return { ...t, n, avg, sd, min: n ? Math.min(...v) : NaN, max: n ? Math.max(...v) : NaN,
+      early: t.dir === 'up' ? v.filter(r => r < cfg.target - 250).length : 0,
+      over: v.filter(r => r > cfg.limit).length };
+  }).filter(t => t.n).sort((a, b) => (a.dir === b.dir ? (a.dir === 'up' ? a.from - b.from : b.from - a.from) : a.dir === 'up' ? -1 : 1));
+  const worstLug = [...lugBins.entries()].sort((a, b) => b[1] - a[1])[0];
+  return { shifts, perLap, types, flying, worstLug, cfg };
+}
+
+function renderShift(s) {
+  const cfg = shiftConfig(s);
+  $('cfg-target').value = cfg.target; $('cfg-limit').value = cfg.limit; $('cfg-band').value = cfg.band;
+  $('cfg-note').innerText = cfg.derived ? 'Defaults come from this session\'s peak RPM — enter your engine\'s real shift point, limiter and power band (saved per car).' : `Saved for ${s.vehicle}.`;
+  const R = computeShifts(s, cfg);
+  if (!R || !R.flying.length) {
+    $('shift-kpis').innerHTML = `<div class="col-span-full panel p-4 text-sm text-slate-400 font-mono">${!R ? 'This export has no recognisable gear or RPM channel.' : 'No flying laps to analyse.'}</div>`;
+    ['shift-findings', 'shift-type-table', 'shift-lap-table'].forEach(id => $(id).innerHTML = ''); killChart('ch-shift'); return;
+  }
+  S.shiftResult = R;
+  const nl = R.flying.length, ups = R.shifts.filter(x => x.dir === 'up' && x.wot), downs = R.shifts.filter(x => x.dir === 'down');
+  const avgUp = ups.length ? ups.reduce((a, x) => a + x.rpm, 0) / ups.length : NaN;
+  const early = ups.filter(x => x.rpm < cfg.target - 250).length, overRevs = downs.filter(x => x.rpm > cfg.limit).length;
+  const lug = R.perLap.reduce((a, p) => a + p.lug, 0) / nl, lim = R.perLap.reduce((a, p) => a + p.lim, 0) / nl;
+  const K = (l, v, sub, c) => `<div class="panel p-3"><div class="text-[10px] text-slate-400 font-mono kicker">${l}</div><div class="font-display font-bold text-2xl ${c}">${v}</div><div class="text-[10px] text-slate-500 font-mono">${sub}</div></div>`;
+  $('shift-kpis').innerHTML = [
+    K('UPSHIFTS / LAP', (ups.length / nl).toFixed(1), 'at full throttle', 'text-white'),
+    K('AVG UPSHIFT', fmtNum(avgUp, 0), `rpm · target ${cfg.target}`, Math.abs(avgUp - cfg.target) < 200 ? 'text-emerald-400' : 'text-amber-400'),
+    K('EARLY UPSHIFTS', `${early}`, `of ${ups.length} (>250 rpm under target)`, early ? 'text-amber-400' : 'text-emerald-400'),
+    K('DOWNSHIFT OVER-REV', `${overRevs}`, `peaks above ${cfg.limit} rpm`, overRevs ? 'text-red-400' : 'text-emerald-400'),
+    K('BELOW POWER BAND', `${lug.toFixed(2)}s`, `per lap, full throttle < ${cfg.band}`, lug > 1 ? 'text-amber-400' : 'text-emerald-400'),
+    K('ON THE LIMITER', `${lim.toFixed(2)}s`, `per lap ≥ ${cfg.limit - 50} rpm`, lim > 0.5 ? 'text-amber-400' : 'text-emerald-400'),
+  ].join('');
+
+  // Scatter
+  const palette = ['#60a5fa', '#34d399', '#fbbf24', '#f472b6', '#a78bfa'];
+  const maxD = Math.max(...R.flying.map(l => l.length));
+  const ds = R.types.map((t, i) => ({
+    type: 'scatter', label: t.key, data: t.list.filter(x => t.dir === 'down' || x.wot).map(x => ({ x: x.d, y: x.rpm, lap: x.lap })),
+    backgroundColor: t.dir === 'up' ? palette[(t.from - 1) % palette.length] : 'rgba(148,163,184,.7)', borderColor: 'transparent',
+    pointStyle: t.dir === 'up' ? 'circle' : 'triangle', pointRadius: t.dir === 'up' ? 4 : 3.5,
+  }));
+  ds.push({ type: 'line', label: 'Target', data: [{ x: 0, y: cfg.target }, { x: maxD, y: cfg.target }], borderColor: '#10b981', borderDash: [5, 4], borderWidth: 1.2, pointRadius: 0 });
+  ds.push({ type: 'line', label: 'Limit', data: [{ x: 0, y: cfg.limit }, { x: maxD, y: cfg.limit }], borderColor: '#ef4444', borderDash: [5, 4], borderWidth: 1.2, pointRadius: 0 });
+  ds.push({ type: 'line', label: 'Band', data: [{ x: 0, y: cfg.band }, { x: maxD, y: cfg.band }], borderColor: '#f59e0b', borderDash: [2, 4], borderWidth: 1, pointRadius: 0 });
+  killChart('ch-shift');
+  if (window.Chart) S.charts['ch-shift'] = new Chart($('ch-shift').getContext('2d'), {
+    type: 'scatter', data: { datasets: ds },
+    options: { responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: true, labels: { boxWidth: 10, padding: 8, usePointStyle: true } },
+        tooltip: { callbacks: { label: c => c.raw.lap ? `${c.dataset.label} · L${c.raw.lap} · ${Math.round(c.raw.y)} rpm @ ${Math.round(c.raw.x)} m` : `${c.dataset.label} ${Math.round(c.raw.y)}` } } },
+      scales: { x: { type: 'linear', min: 0, max: maxD, grid: { color: '#1f2937' }, ticks: { callback: v => Math.round(v) + 'm' } },
+                y: { grid: { color: '#1f2937' }, suggestedMin: cfg.band - 500, suggestedMax: cfg.limit + 300 } } }
+  });
+
+  // Tables
+  $('shift-type-table').innerHTML = `<thead><tr class="text-slate-400 border-b border-racing-border bg-racing-cardBg"><th class="p-2">SHIFT</th><th class="p-2 text-right">COUNT</th><th class="p-2 text-right">AVG</th><th class="p-2 text-right">MIN–MAX</th><th class="p-2 text-right">σ</th><th class="p-2">FLAGS</th></tr></thead><tbody class="divide-y divide-racing-border/40">` +
+    R.types.map(t => `<tr><td class="p-2 font-bold ${t.dir === 'up' ? 'text-emerald-300' : 'text-slate-300'}">${t.dir === 'up' ? '▲' : '▼'} ${t.key}</td><td class="p-2 text-right">${t.n}</td><td class="p-2 text-right">${fmtNum(t.avg, 0)}</td><td class="p-2 text-right text-slate-400">${fmtNum(t.min, 0)}–${fmtNum(t.max, 0)}</td><td class="p-2 text-right ${t.sd > 200 ? 'text-amber-400' : ''}">±${fmtNum(t.sd, 0)}</td><td class="p-2">${t.early ? `<span class="text-amber-300">${t.early} early</span> ` : ''}${t.over ? `<span class="text-red-300">${t.over} over-rev</span>` : ''}${!t.early && !t.over ? '<span class="text-slate-600">—</span>' : ''}</td></tr>`).join('') + '</tbody>';
+  $('shift-lap-table').innerHTML = `<thead><tr class="text-slate-400 border-b border-racing-border bg-racing-cardBg"><th class="p-2">LAP</th><th class="p-2">TIME</th><th class="p-2 text-right">UPSHIFTS</th><th class="p-2 text-right">AVG RPM</th><th class="p-2 text-right">EARLY</th><th class="p-2 text-right">OVER-REV</th><th class="p-2 text-right">BELOW BAND</th><th class="p-2 text-right">LIMITER</th></tr></thead><tbody class="divide-y divide-racing-border/40">` +
+    R.perLap.map(p => `<tr class="${p.lap.isBest ? 'bg-emerald-500/5' : ''}"><td class="p-2 ${p.lap.isBest ? 'text-emerald-400 font-bold' : ''}">L${p.lap.num}</td><td class="p-2">${fmtLap(p.lap.seconds)}</td><td class="p-2 text-right">${p.ups}</td><td class="p-2 text-right">${fmtNum(p.avgUp, 0)}</td><td class="p-2 text-right ${p.early ? 'text-amber-400' : ''}">${p.early}</td><td class="p-2 text-right ${p.over ? 'text-red-400' : ''}">${p.over}</td><td class="p-2 text-right">${p.lug.toFixed(2)}s</td><td class="p-2 text-right">${p.lim.toFixed(2)}s</td></tr>`).join('') + '</tbody>';
+
+  $('shift-findings').innerHTML = shiftFindings(R).map(([c, t]) => `<div class="p-2.5 rounded-lg bg-slate-900 border-l-4 ${{ red: 'border-red-500', amber: 'border-amber-500', ok: 'border-emerald-500', info: 'border-blue-500' }[c]}">${esc(t)}</div>`).join('');
+}
+
+function shiftFindings(R) {
+  const { cfg, types, perLap } = R, out = [];
+  types.filter(t => t.dir === 'up').forEach(t => {
+    const diff = t.avg - cfg.target;
+    if (diff < -250) out.push(['amber', `${t.key} upshifts average ${Math.round(t.avg)} rpm — ${Math.round(-diff)} rpm before your ${cfg.target} target (${t.early}/${t.n} early). Hold the gear longer if the engine still pulls there.`]);
+    else if (t.max > cfg.limit) out.push(['red', `${t.key} upshifts reached ${Math.round(t.max)} rpm — at or past the ${cfg.limit} limit. Shift slightly earlier to stay off the limiter.`]);
+    else out.push(['ok', `${t.key} upshifts average ${Math.round(t.avg)} rpm (±${Math.round(t.sd || 0)}), on target.`]);
+    if (t.sd > 200) out.push(['info', `${t.key} shift point varies ±${Math.round(t.sd)} rpm lap to lap — a shift light or a consistent visual cue would tighten it.`]);
+  });
+  const overs = types.filter(t => t.dir === 'down' && t.over);
+  overs.forEach(t => out.push(['red', `${t.over} ${t.key} downshift${t.over > 1 ? 's' : ''} spiked past ${cfg.limit} rpm (max ${Math.round(t.max)}). Downshift a little later or blip less to protect the engine.`]));
+  const lug = perLap.reduce((a, p) => a + p.lug, 0) / perLap.length;
+  if (lug > 0.5 && R.worstLug) out.push(['amber', `${lug.toFixed(2)}s per lap at full throttle below ${cfg.band} rpm. Most of it is around ${R.worstLug[0]}–${R.worstLug[0] + 100} m into the lap — a lower gear there (or a different line) may pull harder.`]);
+  if (!out.length) out.push(['info', 'No shifts detected on flying laps.']);
+  return out;
+}
+
+// =====================================================================
+// WEATHER & TRACK CONDITIONS (Open-Meteo, free, no key)
+// =====================================================================
+function sessionStartLocal(s) {
+  const d = String(s.date || '').replace(/^[A-Za-z]+,\s*/, '');
+  const dt = new Date(`${d} ${s.clock || '12:00 PM'}`);
+  if (isNaN(dt)) return null;
+  const pad = n => String(n).padStart(2, '0');
+  return { iso: `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`, hour: dt.getHours() + dt.getMinutes() / 60 };
+}
+function trackLocation(s) {
+  if (!s.hasGPS) return null;
+  const lat = median(Array.from(chData(s, 'lat')).filter(v => v)), lon = median(Array.from(chData(s, 'lon')).filter(v => v));
+  return isNum(lat) && isNum(lon) ? { lat, lon } : null;
+}
+// Direction of travel on the main straight (where top speed occurs on the best lap), degrees from north
+function straightHeading(s) {
+  const l = bestLap(s), spd = chData(s, 'speed') || chData(s, 'wspeed'); if (!s.hasGPS || !spd) return NaN;
+  let k = l.iStart; for (let i = l.iStart; i <= l.iEnd; i++) if (spd[i] > spd[k]) k = i;
+  const a = Math.max(l.iStart, k - 20), b = Math.min(l.iEnd, k + 5);
+  return (Math.atan2(s.X[b] - s.X[a], s.Y[b] - s.Y[a]) * 180 / Math.PI + 360) % 360;
+}
+function airDensity(tF, rh, pHpa) {
+  const T = (tF - 32) * 5 / 9, TK = T + 273.15;
+  const ps = 6.1078 * Math.pow(10, 7.5 * T / (T + 237.3)), pv = rh / 100 * ps, pd = pHpa - pv;
+  return pd * 100 / (287.05 * TK) + pv * 100 / (461.495 * TK);
+}
+async function fetchWeather(s, force) {
+  if (!s || (s.weather && !force) ) return;
+  const loc = trackLocation(s), start = sessionStartLocal(s);
+  if (!loc || !start) { s.weather = { status: 'error', msg: !loc ? 'No GPS position in this session.' : 'Session date/time missing from the CSV header.' }; refreshWeatherUI(s); return; }
+  const cacheKey = `apexWx:${loc.lat.toFixed(3)},${loc.lon.toFixed(3)}:${start.iso}`;
+  let raw = null, source = null;
+  if (!force) { try { const c = JSON.parse(localStorage.getItem(cacheKey) || 'null'); if (c) { raw = c.raw; source = c.source; } } catch {} }
+  s.weather = { status: 'loading' }; refreshWeatherUI(s);
+  const q = `latitude=${loc.lat.toFixed(4)}&longitude=${loc.lon.toFixed(4)}&start_date=${start.iso}&end_date=${start.iso}` +
+    `&hourly=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,wind_direction_10m,cloud_cover,shortwave_radiation,precipitation` +
+    `&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto`;
+  const hourIdx = Math.floor(start.hour);
+  const good = j => j && j.hourly && Array.isArray(j.hourly.temperature_2m) && j.hourly.temperature_2m[hourIdx] != null;
+  if (!raw) {
+    for (const [name, base] of [['ERA5 reanalysis (archive)', 'https://archive-api.open-meteo.com/v1/archive?'], ['historical forecast', 'https://historical-forecast-api.open-meteo.com/v1/forecast?'], ['forecast', 'https://api.open-meteo.com/v1/forecast?']]) {
+      try { const r = await fetch(base + q); if (!r.ok) continue; const j = await r.json(); if (good(j)) { raw = j; source = name; break; } } catch (e) { /* try next */ }
+    }
+    if (raw) { try { localStorage.setItem(cacheKey, JSON.stringify({ raw, source })); } catch {} }
+  }
+  if (!raw) { s.weather = { status: 'error', msg: 'Could not reach Open-Meteo (offline, or the date is outside its range). Enter conditions in the setup form instead.' }; refreshWeatherUI(s); return; }
+  const H = raw.hourly;
+  const hours = H.time.map((t, i) => ({ h: +t.slice(11, 13), temp: H.temperature_2m[i], rh: H.relative_humidity_2m[i], p: H.surface_pressure[i], wind: H.wind_speed_10m[i], dir: H.wind_direction_10m[i], cloud: H.cloud_cover[i], ghi: H.shortwave_radiation[i], rain: H.precipitation[i] }));
+  const dur = (s.time[s.n - 1] - s.time[0]) / 3600, mid = start.hour + dur / 2;
+  const at = {};
+  ['temp', 'rh', 'p', 'wind', 'cloud', 'ghi', 'rain'].forEach(k => {
+    const a = hours[Math.min(23, Math.floor(mid))], b = hours[Math.min(23, Math.floor(mid) + 1)], f = mid - Math.floor(mid);
+    at[k] = a && b && a[k] != null && b[k] != null ? a[k] + f * (b[k] - a[k]) : a ? a[k] : NaN;
+  });
+  at.dir = hours[Math.min(23, Math.round(mid))].dir;
+  // Asphalt runs hotter than air in sun: simple radiation/wind model, labelled as an estimate
+  const trackEst = at.temp + 0.045 * (at.ghi || 0) / (1 + 0.03 * (at.wind || 0));
+  const rho = airDensity(at.temp, at.rh, at.p);
+  const densityAlt = 145442.16 * (1 - Math.pow(rho / 1.225, 0.234969));
+  const hd = straightHeading(s);
+  const headwind = isNum(hd) && isNum(at.dir) ? at.wind * Math.cos((at.dir - hd) * Math.PI / 180) : NaN;
+  s.weather = { status: 'ok', source, hours, at, trackEst, rho, densityAlt, densityPct: (rho / 1.225 - 1) * 100, headwind, startHour: start.hour, endHour: start.hour + dur, date: start.iso, loc, tz: raw.timezone_abbreviation || raw.timezone };
+  saveSessionSummary(s); refreshWeatherUI(s);
+}
+const COMPASS = d => ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'][Math.round(((d % 360) / 22.5)) % 16];
+function measuredTrackTemp(s) { const r = loadSetup(s); const v = r && r.fields && Number(r.fields.trackTemp); return isNum(v) && v > 0 ? v : NaN; }
+function weatherChip(s) {
+  const w = s.weather;
+  if (!w || w.status === 'loading') return `<span class="px-2 py-1 bg-racing-darkBg rounded border border-racing-border text-slate-500"><i class="fa-solid fa-cloud-sun"></i> weather…</span>`;
+  if (w.status !== 'ok') return `<button onclick="switchTab('setup')" class="px-2 py-1 bg-racing-darkBg rounded border border-racing-border text-slate-500"><i class="fa-solid fa-cloud"></i> no weather</button>`;
+  const mt = measuredTrackTemp(s);
+  return `<button onclick="switchTab('setup')" class="px-2 py-1 bg-racing-darkBg rounded border border-sky-500/40 text-sky-300"><i class="fa-solid fa-cloud-sun"></i> ${Math.round(w.at.temp)}°F air · ${isNum(mt) ? `${Math.round(mt)}°F track` : `~${Math.round(w.trackEst)}°F track`} · DA ${Math.round(w.densityAlt).toLocaleString()} ft</button>`;
+}
+function refreshWeatherUI(s) {
+  if (s !== sess()) return;
+  if (S.tab === 'setup') renderWeatherPanel(s);
+  const chips = $('strip-chips'); if (chips) renderStrip(s);
+}
+$('btn-wx-retry').addEventListener('click', () => { const s = sess(); if (s) fetchWeather(s, true); });
+function renderWeatherPanel(s) {
+  const w = s.weather, el = $('wx-panel');
+  if (!w || w.status === 'loading') { el.innerHTML = '<div class="text-slate-400"><i class="fa-solid fa-circle-notch fa-spin"></i> Fetching historical weather…</div>'; killChart('ch-wx'); $('wx-source').innerText = ''; return; }
+  if (w.status !== 'ok') { el.innerHTML = `<div class="text-slate-400">${esc(w.msg)}</div>`; killChart('ch-wx'); $('wx-source').innerText = ''; return; }
+  const a = w.at, mt = measuredTrackTemp(s);
+  const row = (k, v, cls = 'text-slate-100') => `<div class="flex justify-between py-1 border-b border-racing-border/40"><span class="text-slate-400">${k}</span><span class="${cls}">${v}</span></div>`;
+  el.innerHTML = [
+    row('Air temp', `${a.temp.toFixed(0)} °F`, 'text-amber-300 font-bold'),
+    row('Track temp', isNum(mt) ? `${mt.toFixed(0)} °F (measured)` : `~${w.trackEst.toFixed(0)} °F (estimate)`, 'text-orange-300 font-bold'),
+    row('Humidity', `${a.rh.toFixed(0)} %`),
+    row('Wind', `${a.wind.toFixed(0)} mph from ${COMPASS(a.dir)}`),
+    isNum(w.headwind) ? row('On the main straight', `${Math.abs(w.headwind).toFixed(0)} mph ${w.headwind >= 0 ? 'headwind' : 'tailwind'}`, Math.abs(w.headwind) > 5 ? 'text-sky-300' : 'text-slate-100') : '',
+    row('Sky / sun', `${a.cloud.toFixed(0)}% cloud · ${a.ghi.toFixed(0)} W/m²`),
+    row('Rain', a.rain > 0.005 ? `${a.rain.toFixed(2)} in/h` : 'dry'),
+    row('Density altitude', `${Math.round(w.densityAlt).toLocaleString()} ft`, 'text-sky-300 font-bold'),
+    row('Air density vs standard', `${w.densityPct >= 0 ? '+' : ''}${w.densityPct.toFixed(1)}% (≈ engine power)`),
+  ].join('');
+  const hrs = w.hours.filter(h => h.h >= Math.floor(w.startHour) - 4 && h.h <= Math.ceil(w.endHour) + 3);
+  lineChart('ch-wx', [
+    { data: hrs.map(h => ({ x: h.h, y: h.temp })), borderColor: '#fbbf24', label: 'Air °F' },
+    { data: hrs.map(h => ({ x: h.h, y: h.temp + 0.045 * (h.ghi || 0) / (1 + 0.03 * (h.wind || 0)) })), borderColor: '#fb923c', borderDash: [4, 3], label: 'Track est. °F' },
+  ], { legend: true, xTick: v => `${((v + 11) % 12) + 1}${v < 12 ? 'a' : 'p'}`, cursor: false });
+  const ch = S.charts['ch-wx']; if (ch) { ch.options.plugins.cursor.x = (w.startHour + w.endHour) / 2; ch.draw(); }
+  $('wx-source').innerText = `Open-Meteo ${w.source}, hourly at ${w.loc.lat.toFixed(3)}, ${w.loc.lon.toFixed(3)} on ${w.date} (${w.tz || 'local'}), interpolated to mid-session. Track temp is a simple sun/wind estimate — enter an IR-gun reading in the setup form to override it.`;
+}
+
+// =====================================================================
+// SETUP & NOTES LOG + SESSION HISTORY (localStorage)
+// =====================================================================
+const SETUP_FIELDS = [
+  { g: 'Tire pressures — cold (psi)', f: [['pcFL', 'FL'], ['pcFR', 'FR'], ['pcRL', 'RL'], ['pcRR', 'RR']], t: 'number' },
+  { g: 'Tire pressures — hot (psi)', f: [['phFL', 'FL'], ['phFR', 'FR'], ['phRL', 'RL'], ['phRR', 'RR']], t: 'number' },
+  { g: 'Tires', f: [['tire', 'Compound / set / heat cycles']], t: 'text', wide: true },
+  { g: 'Alignment', f: [['camberF', 'Camber F'], ['camberR', 'Camber R'], ['toeF', 'Toe F'], ['toeR', 'Toe R']], t: 'text' },
+  { g: 'Chassis', f: [['rideF', 'Ride height F'], ['rideR', 'Ride height R'], ['springF', 'Spring F'], ['springR', 'Spring R']], t: 'text' },
+  { g: 'Dampers & bars', f: [['shockF', 'Shocks F'], ['shockR', 'Shocks R'], ['barF', 'Bar F'], ['barR', 'Bar R']], t: 'text' },
+  { g: 'Car & track', f: [['fuel', 'Fuel (gal)'], ['ballast', 'Ballast (lb)'], ['trackTemp', 'Track temp °F (IR)'], ['tireTemp', 'Tire temps (I/M/O)']], t: 'text' },
+  { g: 'Driver feedback', f: [['feedback', 'How did the car feel? Balance, braking, traction, problems…']], t: 'area' },
+  { g: 'Changes / next time', f: [['changes', 'What was changed before this session, and what to try next']], t: 'area' },
+];
+const ALL_FIELDS = SETUP_FIELDS.flatMap(g => g.f.map(([k, l]) => ({ k, l, g: g.g })));
+const setupKey = s => `apexSetup:${s.vehicle}|${s.date}|${s.clock}`;
+function loadSetup(s) { try { return JSON.parse(localStorage.getItem(setupKey(s)) || 'null'); } catch { return null; } }
+function allSetups() {
+  const out = [];
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('apexSetup:')) { const v = JSON.parse(localStorage.getItem(k)); if (v) out.push({ key: k, ...v }); } } } catch {}
+  return out;
+}
+function writeSetup(s, rec) { try { localStorage.setItem(setupKey(s), JSON.stringify(rec)); return true; } catch { return false; } }
+function sessionSummary(s) {
+  const flying = s.laps.filter(l => l.type === 'flying');
+  const w = s.weather && s.weather.status === 'ok' ? s.weather : null;
+  const st = sessionStartLocal(s);
+  return {
+    file: s.file, track: s.track, driver: s.driver, vehicle: s.vehicle, date: s.date, clock: s.clock, sortKey: st ? `${st.iso}T${String(Math.floor(st.hour)).padStart(2, '0')}:${String(Math.round((st.hour % 1) * 60)).padStart(2, '0')}` : s.date,
+    best: s.bestSeconds, theo: isNum(s.theo) ? s.theo : null, avg: flying.length ? flying.reduce((a, l) => a + l.seconds, 0) / flying.length : null,
+    laps: s.laps.length, flying: flying.length, topSpeed: Math.max(...s.laps.map(l => l.topSpeed).filter(isNum)),
+    air: w ? w.at.temp : null, trackEst: w ? w.trackEst : null, densityAlt: w ? w.densityAlt : null,
+  };
+}
+function saveSessionSummary(s) {
+  const rec = loadSetup(s) || { fields: {} };
+  rec.summary = sessionSummary(s); writeSetup(s, rec);
+}
+let setupTimer = null;
+function renderSetup(s) {
+  const rec = loadSetup(s) || { fields: {} };
+  const inputCls = 'w-full bg-racing-darkBg border border-racing-border rounded px-2 py-1.5 text-xs font-mono text-slate-200 focus:border-sky-500 outline-none';
+  $('setup-form').innerHTML = SETUP_FIELDS.map(g => `<div><div class="text-[10px] font-mono text-slate-500 kicker mb-1.5">${esc(g.g.toUpperCase())}</div>
+    <div class="grid ${g.t === 'area' || g.wide ? 'grid-cols-1' : 'grid-cols-2 md:grid-cols-4'} gap-2">${g.f.map(([k, l]) =>
+      g.t === 'area' ? `<textarea data-k="${k}" rows="3" placeholder="${esc(l)}" class="${inputCls}">${esc(rec.fields[k] || '')}</textarea>`
+      : `<label class="text-[10px] text-slate-400 font-mono">${esc(l)}<input data-k="${k}" type="${g.t === 'number' ? 'number' : 'text'}" step="any" value="${esc(rec.fields[k] ?? '')}" class="${inputCls} mt-0.5"></label>`).join('')}</div></div>`).join('');
+  $('setup-saved').innerText = rec.savedAt ? `Last saved ${new Date(rec.savedAt).toLocaleString()}` : 'Not saved yet';
+  $('setup-form').querySelectorAll('[data-k]').forEach(el => el.addEventListener('input', () => {
+    clearTimeout(setupTimer); $('setup-saved').innerText = 'Saving…';
+    setupTimer = setTimeout(() => {
+      const r = loadSetup(s) || { fields: {} };
+      $('setup-form').querySelectorAll('[data-k]').forEach(x => { const v = x.value.trim(); if (v) r.fields[x.dataset.k] = v; else delete r.fields[x.dataset.k]; });
+      r.savedAt = Date.now(); r.summary = sessionSummary(s);
+      $('setup-saved').innerText = writeSetup(s, r) ? `Saved ${new Date(r.savedAt).toLocaleTimeString()}` : 'Could not save (browser storage blocked)';
+      if (el.dataset.k === 'trackTemp') { renderWeatherPanel(s); renderStrip(s); }
+      renderHistory(s);
+    }, 500);
+  }));
+  renderWeatherPanel(s);
+  renderHistory(s);
+}
+function renderHistory(s) {
+  $('hist-vehicle').innerText = s.vehicle;
+  const recs = allSetups().filter(r => r.summary && r.summary.vehicle === s.vehicle).sort((a, b) => String(a.summary.sortKey).localeCompare(String(b.summary.sortKey)));
+  const showFields = ALL_FIELDS.filter(f => !['feedback', 'changes'].includes(f.k) && recs.some(r => r.fields && r.fields[f.k]));
+  const prevAtTrack = {};
+  const cur = setupKey(s);
+  const rows = recs.map(r => {
+    const sm = r.summary, prev = prevAtTrack[sm.track]; prevAtTrack[sm.track] = r;
+    const dBest = prev && isNum(prev.summary.best) ? sm.best - prev.summary.best : NaN;
+    const cells = showFields.map(f => {
+      const v = (r.fields || {})[f.k] || '', pv = prev ? ((prev.fields || {})[f.k] || '') : v;
+      return `<td class="p-2 ${prev && v !== pv ? 'changed' : 'text-slate-300'}" title="${prev && v !== pv ? `was ${esc(pv || '—')}` : ''}">${esc(v || '—')}</td>`;
+    }).join('');
+    const notes = [r.fields && r.fields.feedback, r.fields && r.fields.changes].filter(Boolean).join(' / ');
+    return `<tr class="${r.key === cur ? 'bg-sky-500/10' : ''}">
+      <td class="p-2">${esc(sm.date.replace(/^[A-Za-z]+,\s*/, ''))} <span class="text-slate-500">${esc(sm.clock)}</span></td><td class="p-2 text-amber-300">${esc(sm.track)}</td><td class="p-2">${esc(sm.driver)}</td>
+      <td class="p-2 font-bold text-emerald-400">${fmtLap(sm.best)}</td><td class="p-2 ${isNum(dBest) ? (dBest < 0 ? 'text-emerald-400' : 'text-red-400') : 'text-slate-600'}">${isNum(dBest) ? fmtDelta(dBest) : '—'}</td>
+      <td class="p-2 text-purple-300">${fmtLap(sm.theo)}</td><td class="p-2">${sm.air != null ? Math.round(sm.air) + '°' : '—'}</td><td class="p-2">${(r.fields && r.fields.trackTemp) ? r.fields.trackTemp + '°' : sm.trackEst != null ? '~' + Math.round(sm.trackEst) + '°' : '—'}</td>
+      ${cells}<td class="p-2 text-slate-400 max-w-xs truncate" title="${esc(notes)}">${esc(notes || '—')}</td></tr>`;
+  });
+  $('hist-table').innerHTML = `<thead><tr class="text-slate-400 border-b border-racing-border bg-racing-cardBg"><th class="p-2">DATE</th><th class="p-2">TRACK</th><th class="p-2">DRIVER</th><th class="p-2">BEST</th><th class="p-2" title="vs previous session at the same track">Δ PREV</th><th class="p-2">THEO</th><th class="p-2">AIR</th><th class="p-2">TRACK</th>${showFields.map(f => `<th class="p-2" title="${esc(f.g)}">${esc(f.l)}</th>`).join('')}<th class="p-2">NOTES</th></tr></thead><tbody class="divide-y divide-racing-border/40">${rows.join('')}</tbody>`;
+}
+$('btn-hist-export').addEventListener('click', () => {
+  const data = { app: 'apex-debrief', version: 1, exported: new Date().toISOString(), records: allSetups() };
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+  a.download = `apex-debrief-setup-log-${new Date().toISOString().slice(0, 10)}.json`; document.body.appendChild(a); a.click(); a.remove();
+});
+$('hist-import').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const d = JSON.parse(await f.text()); let n = 0;
+    (d.records || []).forEach(r => { if (r.key && r.key.startsWith('apexSetup:')) { const { key, ...rest } = r; const ex = (() => { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; } })(); if (!ex || (rest.savedAt || 0) >= (ex.savedAt || 0)) { localStorage.setItem(key, JSON.stringify(rest)); n++; } } });
+    alert(`Imported ${n} session record${n === 1 ? '' : 's'}.`); const s = sess(); if (s) renderSetup(s);
+  } catch (err) { alert('Could not import: ' + err.message); }
+});
+
+// =====================================================================
+// PDF DEBRIEF (print → Save as PDF)
+// =====================================================================
+$('btn-pdf').addEventListener('click', () => { const s = sess(); if (!s) return alert('Load a session first.'); buildReport(s); });
+function buildReport(s) {
+  const best = bestLap(s), flying = s.laps.filter(l => l.type === 'flying');
+  const avg = flying.length ? flying.reduce((a, l) => a + l.seconds, 0) / flying.length : NaN;
+  const sd = flying.length > 1 ? Math.sqrt(flying.reduce((a, l) => a + (l.seconds - avg) ** 2, 0) / flying.length) : NaN;
+  const top = Math.max(...s.laps.map(l => l.topSpeed).filter(isNum));
+  const w = s.weather && s.weather.status === 'ok' ? s.weather : null, mt = measuredTrackTemp(s);
+  const rec = loadSetup(s) || { fields: {} };
+  const { cards } = coachCards(s);
+  const shifts = computeShifts(s, shiftConfig(s));
+  const mech = mechEvals(s).filter(e => e.state !== 'ok');
+
+  // Map image (light theme)
+  let mapImg = '';
+  if (s.hasGPS) { const c = $('report-map'); drawMap(c, s, best, { theme: 'light', width: 700, height: 520, dpr: 2, gateLabels: true }); mapImg = c.toDataURL('image/png'); }
+
+  const kpi = (l, v) => `<div class="rp-kpi"><span>${l}</span><b>${v}</b></div>`;
+  const lapRows = s.laps.filter(l => l.type !== 'partial').map(l => `<tr><td class="${l.isBest ? 'best' : ''}">L${l.num}</td><td class="${l.isBest ? 'best' : l.type === 'flying' ? '' : 'muted'}">${fmtLap(l.seconds)}</td><td class="muted">${l.isBest ? 'BEST' : fmtDelta(l.seconds - s.bestSeconds)}</td><td class="muted">${TYPE_STYLE[l.type][0].toLowerCase()}</td><td>${fmtNum(l.topSpeed, 1)}</td></tr>`).join('');
+  const sectorCards = cards.filter(c => c.kind === 'sector').slice(0, 3);
+  const generalCards = cards.filter(c => c.kind !== 'sector').slice(0, 2);
+  const coach = [...sectorCards, ...generalCards].map(c => `<div class="rp-card ${c.color}"><b>${esc(c.title)}</b> <span class="muted">· ${esc(c.gain)}</span><div>${esc(c.findings)}</div><div><b>→</b> ${esc(c.rec)}</div></div>`).join('');
+  const shiftHtml = shifts && shifts.flying.length ? `<table><thead><tr><th>Shift</th><th>n</th><th>Avg rpm</th><th>Range</th><th>Flags</th></tr></thead><tbody>${shifts.types.map(t => `<tr><td>${t.dir === 'up' ? '▲' : '▼'} ${t.key}</td><td>${t.n}</td><td>${fmtNum(t.avg, 0)}</td><td class="muted">${fmtNum(t.min, 0)}–${fmtNum(t.max, 0)}</td><td>${t.early ? t.early + ' early ' : ''}${t.over ? t.over + ' over-rev' : ''}</td></tr>`).join('')}</tbody></table>
+    <div style="margin-top:4px">${shiftFindings(shifts).filter(([c]) => c !== 'ok').slice(0, 3).map(([, t]) => `<div>• ${esc(t)}</div>`).join('') || '<div>• Shift points on target.</div>'}</div>` : '<div class="muted">No gear/RPM data.</div>';
+  const filled = ALL_FIELDS.filter(f => rec.fields[f.k] && !['feedback', 'changes'].includes(f.k));
+  const setupHtml = filled.length ? `<div class="rp-grid2">${filled.map(f => `<div><span class="muted">${esc(f.g.replace(/ \(psi\)/, ''))} · ${esc(f.l)}:</span> ${esc(rec.fields[f.k])}</div>`).join('')}</div>` : '<div class="muted">No setup recorded for this session (Setup, Notes & Weather tab).</div>';
+  const notes = ['feedback', 'changes'].filter(k => rec.fields[k]).map(k => `<div><b>${k === 'feedback' ? 'Driver feedback' : 'Changes / next time'}:</b> ${esc(rec.fields[k])}</div>`).join('');
+  const wxLine = w ? `${Math.round(w.at.temp)}°F air · ${isNum(mt) ? Math.round(mt) + '°F track (measured)' : '~' + Math.round(w.trackEst) + '°F track (est.)'} · ${Math.round(w.at.rh)}% RH · wind ${Math.round(w.at.wind)} mph ${COMPASS(w.at.dir)}${isNum(w.headwind) ? ` (${Math.abs(w.headwind).toFixed(0)} mph ${w.headwind >= 0 ? 'head' : 'tail'}wind on straight)` : ''} · DA ${Math.round(w.densityAlt).toLocaleString()} ft` : (isNum(mt) ? `Track ${Math.round(mt)}°F (measured)` : 'Weather unavailable');
+
+  $('report').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #0f172a;padding-bottom:6px">
+      <div><div class="rp-sub" style="letter-spacing:.2em;font-weight:700;color:#2563eb">APEX DEBRIEF · DRIVER REPORT</div><h1>${esc(s.driver)} — ${esc(s.track)}</h1>
+      <div class="rp-sub">${esc(s.vehicle)} · ${esc([s.championship, metaVal(s.meta, 'Session')].filter(Boolean).join(' · '))} · ${esc(s.date)} ${esc(s.clock)}</div></div>
+      <div class="rp-sub" style="text-align:right">${esc(wxLine)}<br>${esc(s.file)}</div>
+    </div>
+    <div class="rp-kpis">${kpi('BEST LAP', `${fmtLap(best.seconds)} <small style="font-size:9px;color:#64748b">L${best.num}</small>`)}${kpi('THEORETICAL', fmtLap(s.theo))}${kpi('AVG FLYING', fmtLap(avg))}${kpi('CONSISTENCY', isNum(sd) ? '±' + sd.toFixed(2) + 's' : '—')}${kpi('TOP SPEED', isNum(top) ? top.toFixed(1) + ' mph' : '—')}${kpi('LAPS', `${flying.length}/${s.laps.length} <small style="font-size:9px;color:#64748b">flying</small>`)}</div>
+    <div class="rp-two" style="margin-top:8px">
+      <div class="rp-section"><h2>Best lap — speed trace & splits</h2>${mapImg ? `<img src="${mapImg}">` : '<div class="muted">No GPS.</div>'}</div>
+      <div class="rp-section"><h2>Lap times</h2><table><thead><tr><th>Lap</th><th>Time</th><th>Δ</th><th>Type</th><th>Top</th></tr></thead><tbody>${lapRows}</tbody></table></div>
+    </div>
+    <div class="rp-section"><h2>Where the time is — coaching</h2>${coach}</div>
+    <div class="rp-two">
+      <div class="rp-section"><h2>Shifting</h2>${shiftHtml}</div>
+      <div class="rp-section"><h2>Engine & data flags</h2>${mech.length ? mech.map(e => `<div>• <b>${esc(e.m.label)}</b>: ${e.state === 'scale' ? 'sensor scaling needs checking' : e.state === 'dead' ? 'no signal' : `${fmtNum(e.v, 1)} ${e.m.unit} — ${e.state === 'red' ? 'ATTENTION' : 'watch'}`}</div>`).join('') : '<div>All monitored engine channels normal.</div>'}</div>
+    </div>
+    <div class="rp-section"><h2>Setup & notes</h2>${setupHtml}${notes ? `<div style="margin-top:6px">${notes}</div>` : ''}</div>
+    <div class="rp-foot">Generated ${new Date().toLocaleString()} by Apex Debrief · all figures computed from the logged data${w ? ` · weather: Open-Meteo ${esc(w.source)}` : ''}.</div>`;
+  const prevTitle = document.title;
+  document.title = `${s.driver} ${s.track} ${sessionStartLocal(s)?.iso || ''} debrief`.replace(/\s+/g, ' ').trim();
+  setTimeout(() => { window.print(); document.title = prevTitle; }, 150);
+}
+</script>
+</body>
+</html>
